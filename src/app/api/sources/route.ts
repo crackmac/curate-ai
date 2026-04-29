@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sources, userSources } from "@/lib/db/schema";
+import { sources, userSources, contentItems, curatedItems, interactions } from "@/lib/db/schema";
 import { seed } from "@/lib/db/seed";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const USER_ID = 1;
 
@@ -36,6 +36,86 @@ export async function GET() {
     });
 
     return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { sourceId, name, url, config, description } = body as {
+      sourceId: number;
+      name?: string;
+      url?: string;
+      config?: Record<string, unknown>;
+      description?: string;
+    };
+
+    const existing = db.select().from(sources).where(eq(sources.id, sourceId)).get();
+    if (!existing) {
+      return NextResponse.json({ error: "Source not found" }, { status: 404 });
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (name !== undefined) updates.name = name;
+    if (url !== undefined) updates.url = url;
+    if (config !== undefined) updates.config = JSON.stringify(config);
+    if (description !== undefined) updates.description = description;
+
+    if (name !== undefined) {
+      updates.slug = `${existing.type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      db.update(sources).set(updates).where(eq(sources.id, sourceId)).run();
+    }
+
+    const updated = db.select().from(sources).where(eq(sources.id, sourceId)).get();
+    return NextResponse.json(updated);
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "unknown error" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const sourceId = Number(searchParams.get("sourceId"));
+
+    if (!sourceId) {
+      return NextResponse.json({ error: "sourceId is required" }, { status: 400 });
+    }
+
+    const contentIds = db
+      .select({ id: contentItems.id })
+      .from(contentItems)
+      .where(eq(contentItems.sourceId, sourceId))
+      .all()
+      .map((r) => r.id);
+
+    if (contentIds.length > 0) {
+      db.delete(interactions)
+        .where(inArray(interactions.contentItemId, contentIds))
+        .run();
+      db.delete(curatedItems)
+        .where(inArray(curatedItems.contentItemId, contentIds))
+        .run();
+      db.delete(contentItems)
+        .where(eq(contentItems.sourceId, sourceId))
+        .run();
+    }
+
+    db.delete(userSources).where(eq(userSources.sourceId, sourceId)).run();
+    db.delete(sources).where(eq(sources.id, sourceId)).run();
+
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown error" },

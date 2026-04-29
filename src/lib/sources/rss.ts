@@ -2,7 +2,7 @@ import Parser from "rss-parser";
 import type { SourceAdapter, RawContentItem, SourceConfig } from "./types";
 
 const parser = new Parser({
-  timeout: 10000,
+  timeout: 20000,
   headers: {
     "User-Agent": "CurateAI/1.0",
   },

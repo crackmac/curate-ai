@@ -1,44 +1,5 @@
 import type { SourceAdapter, RawContentItem, SourceConfig } from "./types";
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-async function getAccessToken(): Promise<string> {
-  const clientId = process.env.REDDIT_CLIENT_ID;
-  const clientSecret = process.env.REDDIT_CLIENT_SECRET;
-
-  if (!clientId || !clientSecret) {
-    throw new Error("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are required");
-  }
-
-  if (cachedToken && Date.now() < cachedToken.expiresAt) {
-    return cachedToken.token;
-  }
-
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString(
-    "base64"
-  );
-
-  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": "CurateAI/1.0",
-    },
-    body: "grant_type=client_credentials",
-  });
-
-  if (!res.ok) throw new Error(`Reddit auth error: ${res.status}`);
-
-  const data = await res.json();
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in - 60) * 1000,
-  };
-
-  return cachedToken.token;
-}
-
 interface RedditPost {
   data: {
     id: string;
@@ -69,13 +30,10 @@ export const redditAdapter: SourceAdapter = {
     const subreddit = config.subreddit;
     if (!subreddit) return [];
 
-    const token = await getAccessToken();
-
     const res = await fetch(
-      `https://oauth.reddit.com/r/${subreddit}/hot.json?limit=25`,
+      `https://www.reddit.com/r/${subreddit}/hot.json?limit=25&raw_json=1`,
       {
         headers: {
-          Authorization: `Bearer ${token}`,
           "User-Agent": "CurateAI/1.0",
         },
       }
@@ -91,10 +49,7 @@ export const redditAdapter: SourceAdapter = {
       const p = post.data;
       if (p.title.startsWith("[removed]")) continue;
 
-      const previewUrl = p.preview?.images?.[0]?.source?.url?.replace(
-        /&amp;/g,
-        "&"
-      );
+      const previewUrl = p.preview?.images?.[0]?.source?.url;
       const thumbnail =
         previewUrl ||
         (p.thumbnail && p.thumbnail.startsWith("http") ? p.thumbnail : undefined);

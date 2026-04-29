@@ -39,7 +39,7 @@ export const blueskyAdapter: SourceAdapter = {
     const actor = config.actor as string | undefined;
 
     if (actor) {
-      return fetchAuthorFeed(actor);
+      return fetchAuthorFeed(actor.replace(/^@/, ""));
     }
 
     if (query) {

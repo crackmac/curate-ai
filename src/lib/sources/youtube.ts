@@ -27,6 +27,44 @@ interface YouTubeVideoItem {
   };
 }
 
+async function resolveChannelId(input: string, apiKey: string): Promise<string | null> {
+  if (input.startsWith("UC") && !input.includes("/")) return input;
+
+  const handleMatch = input.match(/@([\w.-]+)/);
+  if (handleMatch) {
+    const res = await fetch(
+      `${YOUTUBE_API}/channels?` +
+        new URLSearchParams({
+          key: apiKey,
+          forHandle: handleMatch[1],
+          part: "id",
+        })
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.items?.[0]?.id) return data.items[0].id;
+    }
+  }
+
+  const usernameMatch = input.match(/\/(?:c|user)\/([\w.-]+)/);
+  if (usernameMatch) {
+    const res = await fetch(
+      `${YOUTUBE_API}/channels?` +
+        new URLSearchParams({
+          key: apiKey,
+          forUsername: usernameMatch[1],
+          part: "id",
+        })
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.items?.[0]?.id) return data.items[0].id;
+    }
+  }
+
+  return null;
+}
+
 export const youtubeAdapter: SourceAdapter = {
   id: "youtube",
 
@@ -34,8 +72,11 @@ export const youtubeAdapter: SourceAdapter = {
     const apiKey = process.env.YOUTUBE_API_KEY;
     if (!apiKey) throw new Error("YOUTUBE_API_KEY is required");
 
-    const channelId = config.channelId;
-    if (!channelId) return [];
+    const rawChannelId = config.channelId as string | undefined;
+    if (!rawChannelId) return [];
+
+    const channelId = await resolveChannelId(rawChannelId, apiKey);
+    if (!channelId) throw new Error(`Could not resolve channel: ${rawChannelId}`);
 
     const searchRes = await fetch(
       `${YOUTUBE_API}/search?` +
