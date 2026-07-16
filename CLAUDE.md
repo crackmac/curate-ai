@@ -10,12 +10,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev          # Start dev server (localhost:3000)
 npm run build        # Production build
 npm run lint         # ESLint
+npm test             # Run unit tests (Vitest)
 npx drizzle-kit generate   # Generate migration from schema changes
 npx drizzle-kit migrate    # Apply migrations to curate.db
 npx drizzle-kit push       # Push schema directly (dev shortcut, skips migration files)
 ```
 
-No test framework is configured yet.
+Unit tests use Vitest (`*.test.ts` colocated with source). Tests cover pure logic
+only (no DB/network). CI (`.github/workflows/`) runs lint, tests, build, `npm audit`,
+and CodeQL on pushes and PRs to `main`.
 
 ## Architecture
 
