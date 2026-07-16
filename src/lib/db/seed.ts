@@ -1,5 +1,6 @@
 import { db } from "./index";
 import { sources, users, userPreferences } from "./schema";
+import { eq } from "drizzle-orm";
 
 const defaultSources = [
   // ── Hacker News ──────────────────────────────────────────────
@@ -483,7 +484,7 @@ const defaultSources = [
     type: "youtube",
     url: "https://www.youtube.com/@Fireship",
     config: JSON.stringify({ channelId: "UCsBjURrPoezykLs9EqgamOA" }),
-    isDefault: 1,
+    isDefault: 0,
     vetted: 1,
     description: "Fast-paced tech tutorials and news",
   },
@@ -493,7 +494,7 @@ const defaultSources = [
     type: "youtube",
     url: "https://www.youtube.com/@t3dotgg",
     config: JSON.stringify({ channelId: "UCbRP3c757lWg9M-U7TyEkXA" }),
-    isDefault: 1,
+    isDefault: 0,
     vetted: 1,
     description: "TypeScript, Next.js, tRPC, and web dev opinions",
   },
@@ -513,7 +514,7 @@ const defaultSources = [
     type: "youtube",
     url: "https://www.youtube.com/@andrejkarpathy",
     config: JSON.stringify({ channelId: "UCXUPKJO5MZQN11PqgIvyuvQ" }),
-    isDefault: 1,
+    isDefault: 0,
     vetted: 1,
     description: "First-principles neural network and LLM tutorials",
   },
@@ -533,7 +534,7 @@ const defaultSources = [
     type: "youtube",
     url: "https://www.youtube.com/@TwoMinutePapers",
     config: JSON.stringify({ channelId: "UCbfYPyITQ-7l4upoX8nvctg" }),
-    isDefault: 0,
+    isDefault: 1,
     vetted: 1,
     description: "Concise summaries of cutting-edge AI research",
   },
@@ -546,6 +547,36 @@ const defaultSources = [
     isDefault: 1,
     vetted: 1,
     description: "Thorough, measured analysis of major AI developments",
+  },
+  {
+    slug: "youtube/1littlecoder",
+    name: "1littlecoder",
+    type: "youtube",
+    url: "https://www.youtube.com/@1littlecoder",
+    config: JSON.stringify({ channelId: "UCpV_X0VrL8-jg3t6wYGS-1g" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "AI/ML coding tutorials and tool walkthroughs",
+  },
+  {
+    slug: "youtube/dylan-curious",
+    name: "Dylan Curious",
+    type: "youtube",
+    url: "https://www.youtube.com/@Dylan_Curious",
+    config: JSON.stringify({ channelId: "UCpdyFxSktWo3W6kMYfmk6lg" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "AI and tech curiosity-driven explainers",
+  },
+  {
+    slug: "youtube/arseny-shatokhin",
+    name: "Arseny Shatokhin",
+    type: "youtube",
+    url: "https://www.youtube.com/@vrsen",
+    config: JSON.stringify({ channelId: "UCSv4qL8vmoSH7GaPjuqRiCQ" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "AI engineering and agent development tutorials",
   },
   {
     slug: "youtube/matt-pocock",
@@ -747,8 +778,23 @@ export function seed() {
           "short",
           "social",
         ]),
-        digestSize: 30,
+        digestSize: 50,
       })
       .run();
   }
+
+  // Sync isDefault flags for existing sources (onConflictDoNothing won't update them)
+  const defaultBySlug = new Map(defaultSources.map((s) => [s.slug, s.isDefault]));
+  for (const [slug, isDefault] of defaultBySlug) {
+    db.update(sources)
+      .set({ isDefault })
+      .where(eq(sources.slug, slug))
+      .run();
+  }
+
+  // Ensure digestSize is current for existing users
+  db.update(userPreferences)
+    .set({ digestSize: 50 })
+    .where(eq(userPreferences.userId, 1))
+    .run();
 }

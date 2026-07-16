@@ -1,4 +1,8 @@
-import { pipeline, type FeatureExtractionPipeline } from "@huggingface/transformers";
+import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
+
+if (process.env.DATABASE_PATH) {
+  env.cacheDir = "/data/models";
+}
 
 let extractor: FeatureExtractionPipeline | null = null;
 

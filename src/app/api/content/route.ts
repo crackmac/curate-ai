@@ -2,14 +2,12 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { contentItems, curatedItems, sources } from "@/lib/db/schema";
 import { desc, eq, and } from "drizzle-orm";
-import { seed } from "@/lib/db/seed";
 import type { CuratedContentItem } from "@/types";
 
 const USER_ID = 1;
 
 export async function GET() {
   try {
-    seed();
 
     const today = new Date().toISOString().split("T")[0];
 

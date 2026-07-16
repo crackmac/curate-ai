@@ -8,6 +8,7 @@ interface CandidateForRanking {
   source: string;
   author: string | null;
   similarityScore: number;
+  crossSourceCount?: number;
 }
 
 export type ReasonTag =
@@ -47,7 +48,7 @@ function buildPrompt(
   const candidateList = candidates
     .map(
       (c, i) =>
-        `${i + 1}. [ID:${c.id}] "${c.title}" (${c.type} from ${c.source}, similarity: ${c.similarityScore.toFixed(2)})${c.summary ? `\n   ${c.summary.slice(0, 150)}` : ""}`
+        `${i + 1}. [ID:${c.id}] "${c.title}" (${c.type} from ${c.source}, similarity: ${c.similarityScore.toFixed(2)}${c.crossSourceCount && c.crossSourceCount > 1 ? `, appeared in ${c.crossSourceCount} sources` : ""})${c.summary ? `\n   ${c.summary.slice(0, 150)}` : ""}`
     )
     .join("\n");
 
@@ -73,7 +74,8 @@ Scoring guidelines:
 - Medium scores (40-69): tangentially related, broadly interesting
 - Low scores (0-39): off-topic or low quality
 - Penalize content similar to disliked items
-- Boost content similar to recent saves`;
+- Boost content similar to recent saves
+- Boost items that appeared in multiple sources — cross-source coverage signals importance`;
 }
 
 function parseResponse(
@@ -104,7 +106,7 @@ async function rankWithAnthropic(
   const client = new Anthropic();
   const response = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: "user", content: prompt }],
   });
 

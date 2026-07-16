@@ -22,6 +22,7 @@ CREATE TABLE `curated_items` (
 	`content_item_id` integer NOT NULL,
 	`score` real NOT NULL,
 	`explanation` text NOT NULL,
+	`reason` text DEFAULT 'topic_match' NOT NULL,
 	`digest_date` text NOT NULL,
 	`position` integer NOT NULL,
 	`created_at` text DEFAULT '(datetime(''now''))' NOT NULL,

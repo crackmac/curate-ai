@@ -6,7 +6,7 @@ import {
   userPreferences,
   sources,
 } from "@/lib/db/schema";
-import { eq, desc, and, isNull, isNotNull, inArray } from "drizzle-orm";
+import { eq, desc, and, isNull, isNotNull, inArray, gte } from "drizzle-orm";
 import {
   generateEmbedding,
   embeddingToBuffer,
@@ -15,7 +15,7 @@ import {
 import { rankBySimilarity, computeInterestVector } from "./similarity";
 import { rankWithLLM, type RankedItem } from "./ranker";
 
-const MAX_CANDIDATES = 60;
+const MAX_CANDIDATES = 100;
 
 export async function runCurationPipeline(userId: number) {
   const today = new Date().toISOString().split("T")[0];
@@ -48,7 +48,7 @@ export async function runCurationPipeline(userId: number) {
     .innerJoin(sources, eq(contentItems.sourceId, sources.id))
     .where(isNotNull(contentItems.embedding))
     .orderBy(desc(contentItems.publishedAt))
-    .limit(200)
+    .limit(400)
     .all();
 
   if (candidates.length === 0) return { curated: 0 };
@@ -85,6 +85,9 @@ export async function runCurationPipeline(userId: number) {
       similarityScore: 0.5,
     }));
   }
+
+  // 4b. Cross-source signal detection
+  const crossSourceMap = detectCrossSourceSignals(topCandidates.map((c) => c.id));
 
   // 5. Stage 2 — Claude ranking
   const prefs = db
@@ -133,6 +136,7 @@ export async function runCurationPipeline(userId: number) {
         source: c.sourceName,
         author: c.author,
         similarityScore: c.similarityScore,
+        crossSourceCount: crossSourceMap.get(c.id) ?? 1,
       })),
       userTopics,
       recentSaves,
@@ -163,11 +167,15 @@ export async function runCurationPipeline(userId: number) {
   });
 
   const sorted = topCandidates
-    .map((c) => ({
-      ...c,
-      ranked: scoreMap.get(c.id) ?? defaultRanked(c.id),
-    }))
-    .sort((a, b) => b.ranked.score - a.ranked.score);
+    .map((c) => {
+      const ranked = scoreMap.get(c.id) ?? defaultRanked(c.id);
+      const crossCount = crossSourceMap.get(c.id) ?? 1;
+      const boostedScore = Math.round(ranked.score * (1 + 0.15 * (crossCount - 1)));
+      return { ...c, ranked, boostedScore };
+    })
+    .sort((a, b) => b.boostedScore - a.boostedScore);
+
+  const usedIds = new Set<number>();
 
   for (const item of sorted) {
     if (digest.length >= digestSize) break;
@@ -177,13 +185,28 @@ export async function runCurationPipeline(userId: number) {
 
     digest.push({
       contentItemId: item.id,
-      score: item.ranked.score,
+      score: item.boostedScore,
       explanation: item.ranked.explanation,
       reason: item.ranked.reason,
       position: digest.length,
     });
 
+    usedIds.add(item.id);
     sourceCount.set(item.sourceType, count + 1);
+  }
+
+  // Fill remaining slots from any source type (overflow pass)
+  for (const item of sorted) {
+    if (digest.length >= digestSize) break;
+    if (usedIds.has(item.id)) continue;
+
+    digest.push({
+      contentItemId: item.id,
+      score: item.boostedScore,
+      explanation: item.ranked.explanation,
+      reason: item.ranked.reason,
+      position: digest.length,
+    });
   }
 
   // 7. Write to curated_items
@@ -214,20 +237,85 @@ async function generateMissingEmbeddings() {
     })
     .from(contentItems)
     .where(isNull(contentItems.embedding))
-    .limit(100)
+    .limit(500)
     .all();
 
-  for (const item of items) {
-    const text = `${item.title}${item.summary ? `. ${item.summary}` : ""}`;
-    const embedding = await generateEmbedding(text);
-
-    db.update(contentItems)
-      .set({ embedding: embeddingToBuffer(embedding) })
-      .where(eq(contentItems.id, item.id))
-      .run();
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const batch = items.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (item) => {
+        const text = `${item.title}${item.summary ? `. ${item.summary}` : ""}`;
+        const embedding = await generateEmbedding(text);
+        db.update(contentItems)
+          .set({ embedding: embeddingToBuffer(embedding) })
+          .where(eq(contentItems.id, item.id))
+          .run();
+      })
+    );
   }
 
   return items.length;
+}
+
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function titlesMatchFuzzy(a: string, b: string): boolean {
+  const wordsA = a.split(" ");
+  const wordsB = b.split(" ");
+  for (let i = 0; i <= wordsA.length - 3; i++) {
+    const trigram = wordsA.slice(i, i + 3).join(" ");
+    if (wordsB.length >= 3 && b.includes(trigram)) return true;
+  }
+  return false;
+}
+
+function detectCrossSourceSignals(candidateIds: number[]): Map<number, number> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+  const recentItems = db
+    .select({
+      id: contentItems.id,
+      title: contentItems.title,
+      sourceId: contentItems.sourceId,
+    })
+    .from(contentItems)
+    .where(gte(contentItems.publishedAt, cutoff))
+    .all();
+
+  const candidateSet = new Set(candidateIds);
+  const groups: { ids: number[]; sourceIds: Set<number> }[] = [];
+
+  for (const item of recentItems) {
+    const norm = normalizeTitle(item.title);
+    let matched = false;
+    for (const group of groups) {
+      const representative = normalizeTitle(
+        recentItems.find((r) => r.id === group.ids[0])!.title
+      );
+      if (titlesMatchFuzzy(norm, representative)) {
+        group.ids.push(item.id);
+        group.sourceIds.add(item.sourceId);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      groups.push({ ids: [item.id], sourceIds: new Set([item.sourceId]) });
+    }
+  }
+
+  const result = new Map<number, number>();
+  for (const group of groups) {
+    if (group.sourceIds.size < 2) continue;
+    for (const id of group.ids) {
+      if (candidateSet.has(id)) {
+        result.set(id, group.sourceIds.size);
+      }
+    }
+  }
+  return result;
 }
 
 async function buildInterestVector(userId: number): Promise<Float32Array> {

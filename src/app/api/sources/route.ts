@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sources, userSources, contentItems, curatedItems, interactions } from "@/lib/db/schema";
-import { seed } from "@/lib/db/seed";
 import { eq, and, inArray } from "drizzle-orm";
 
 const USER_ID = 1;
 
 export async function GET() {
   try {
-    seed();
 
     const allSources = db.select().from(sources).all();
     const overrides = db

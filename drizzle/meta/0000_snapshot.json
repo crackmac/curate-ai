@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "3bd2db30-fb9d-4a29-9dbd-1e08e76c377c",
+  "id": "b7275cfa-76d8-4fcb-9f01-0d5d9ec6babf",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "content_items": {
@@ -167,6 +167,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'topic_match'"
         },
         "digest_date": {
           "name": "digest_date",

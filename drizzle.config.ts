@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "sqlite",
   dbCredentials: {
-    url: "curate.db",
+    url: process.env.DATABASE_PATH || "curate.db",
   },
 });

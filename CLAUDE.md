@@ -27,11 +27,13 @@ CurateAI is a Next.js 16 app that aggregates content from multiple sources, rank
 Sources → Ingest API → content_items table → Curation Pipeline → curated_items table → Digest UI
 ```
 
-**Ingestion** (`POST /api/ingest`): Iterates enabled sources, calls the matching adapter, writes raw items to `content_items`. Triggered by Vercel cron every 4 hours.
+**Ingestion** (`POST /api/ingest`): Iterates enabled sources, calls the matching adapter, writes raw items to `content_items`. Triggered by in-process `node-cron` scheduler every 4 hours.
 
-**Curation** (`POST /api/curate`): Two-stage ranking pipeline. Stage 1 filters ~200 candidates to ~60 via embedding cosine similarity against a user interest vector. Stage 2 sends candidates to an LLM (Claude Haiku via Anthropic API, or Ollama fallback) for scoring, explanation, and reason tagging. A diversity pass caps items per source type before writing to `curated_items`. Triggered by Vercel cron daily at 6am.
+**Curation** (`POST /api/curate`): Three-stage pipeline in `pipeline.ts`. It pulls the 400 most-recent embedded items, then Stage 1 ranks them by embedding cosine similarity against a time-decayed user interest vector and keeps the top `MAX_CANDIDATES` (100). If the user has no interest signal yet, Stage 1 is skipped and the 100 most-recent items are used. Stage 2 sends those to an LLM (Claude Haiku `claude-haiku-4-5-20251001` via Anthropic API, else Ollama fallback) for scoring, explanation, and reason tagging. Stage 3 assembles the digest: scores are boosted for cross-source items, then a diversity cap (`max(3, ceil(digestSize / uniqueSourceTypes))`) limits items per source type, with an overflow pass filling remaining slots. `digestSize` defaults to 20. Triggered by the `node-cron` scheduler daily at 6am UTC.
 
 **Serving** (`GET /api/content`): Returns today's curated digest. Falls back to round-robin recent content if no curation exists yet.
+
+**Feedback** (`POST /api/interact`): Records a `click` / `save` / `dismiss` / `less_like_this` interaction against a content item. Saves and dismissals feed back into the interest vector and the LLM prompt's "recently saved / disliked" hints on the next curation run.
 
 ### Source adapters
 
@@ -46,11 +48,11 @@ Each adapter in `src/lib/sources/` implements the `SourceAdapter` interface: an 
 
 ### Database
 
-SQLite via `better-sqlite3` + Drizzle ORM. The DB file is `curate.db` at project root (gitignored). Schema is in `src/lib/db/schema.ts`. WAL mode and foreign keys are enabled.
+SQLite via `better-sqlite3` + Drizzle ORM. DB path is configured via `DATABASE_PATH` env var (defaults to `curate.db` at project root for local dev; `/data/curate.db` on Fly.io). Schema is in `src/lib/db/schema.ts`. WAL mode and foreign keys are enabled.
 
 Key tables: `users`, `user_preferences` (JSON-encoded topics/content types), `sources`, `user_sources` (per-user enable/disable), `content_items` (with blob `embedding` column), `curated_items` (scored/explained/positioned), `interactions` (click/save/dismiss/less_like_this).
 
-The `seed()` function runs on every API request to ensure default sources and a local dev user exist (idempotent via `onConflictDoNothing`).
+The `seed()` function runs at server startup via `instrumentation.ts` to ensure default sources and a local dev user exist (idempotent via `onConflictDoNothing`).
 
 ### Frontend
 
@@ -63,6 +65,12 @@ The `seed()` function runs on every API request to ensure default sources and a 
 
 All API routes hardcode `USER_ID = 1`. Multi-user support is schema-ready but not wired up.
 
+### Deployment
+
+Hosted on Fly.io (`fly.toml`, region `lax`) as a single-machine deployment with a persistent volume `curate_data` mounted at `/data`. The `instrumentation.ts` `register()` hook runs on server boot (Node runtime only): it calls `runMigrations()`, then `seed()`, then `startScheduler()`. Docker image uses Next.js standalone output mode.
+
+Note: `runMigrations()` is bootstrap-only — it applies the Drizzle migrations *only if the `sources` table does not yet exist*, then no-ops on every subsequent boot. It does not apply incremental migrations to an existing DB. After changing the schema, apply migrations manually (`npx drizzle-kit migrate` or `push`) — a running instance will not pick them up on restart.
+
 ## Environment variables
 
 | Variable | Required | Purpose |
@@ -70,3 +78,5 @@ All API routes hardcode `USER_ID = 1`. Multi-user support is schema-ready but no
 | `ANTHROPIC_API_KEY` | For AI curation | Claude Haiku ranking |
 | `OLLAMA_URL` | No (default `localhost:11434`) | Local LLM fallback |
 | `OLLAMA_MODEL` | No (default `llama3.1:8b`) | Ollama model name |
+| `DATABASE_PATH` | No (default `./curate.db`) | SQLite database file path |
+| `INTERNAL_URL` | No (default `http://localhost:3000`) | Base URL for scheduler self-calls |

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sources, contentItems, userSources } from "@/lib/db/schema";
-import { seed } from "@/lib/db/seed";
 import { getAdapter } from "@/lib/sources";
 import { eq } from "drizzle-orm";
 
@@ -9,7 +8,6 @@ const USER_ID = 1;
 
 export async function POST() {
   try {
-    seed();
 
     const allSources = db.select().from(sources).all();
     const overrides = db
