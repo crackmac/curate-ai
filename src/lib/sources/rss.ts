@@ -50,5 +50,19 @@ export function stripHtml(html: string): string {
 
 export function extractImageFromContent(html: string): string | undefined {
   const match = html.match(/<img[^>]+src=["']([^"']+)["']/);
-  return match?.[1];
+  return match ? decodeHtmlEntities(match[1]) : undefined;
+}
+
+// Feed content is HTML-escaped, so extracted URLs keep entities like &amp;.
+// Left as-is they corrupt query strings (e.g. Reddit's signed image params),
+// producing broken images. Decode the common ones back.
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2F;/gi, "/")
+    .replace(/&amp;/g, "&");
 }
