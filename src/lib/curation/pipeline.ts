@@ -318,7 +318,7 @@ function detectCrossSourceSignals(candidateIds: number[]): Map<number, number> {
   return result;
 }
 
-async function buildInterestVector(userId: number): Promise<Float32Array> {
+export async function buildInterestVector(userId: number): Promise<Float32Array> {
   const positiveInteractions = db
     .select({ embedding: contentItems.embedding })
     .from(interactions)

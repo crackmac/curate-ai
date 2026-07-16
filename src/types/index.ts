@@ -32,6 +32,7 @@ export interface CuratedContentItem extends ContentItem {
   sourceName: string;
   sourceType: string;
   sourceSlug: string;
+  sourceCategory: string | null;
 }
 
 export type InteractionType = "click" | "save" | "dismiss" | "less_like_this";

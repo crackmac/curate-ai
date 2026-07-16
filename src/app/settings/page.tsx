@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { SourceManager } from "@/components/SourceManager";
+import { TopicManager } from "@/components/TopicManager";
+import { TopicScoreChart } from "@/components/TopicScoreChart";
 
 export default function SettingsPage() {
   return (
@@ -20,10 +22,32 @@ export default function SettingsPage() {
               Settings
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Manage your content sources
+              Manage your topics and content sources
             </p>
           </div>
         </div>
+
+        <section className="mb-10">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            Your Topics
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            Topics steer ranking — items matching them are scored higher during
+            curation.
+          </p>
+          <TopicManager />
+        </section>
+
+        <section className="mb-10">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+            Topic Affinity
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            How closely each topic matches your recent activity, ranked highest
+            first.
+          </p>
+          <TopicScoreChart />
+        </section>
 
         <section>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">

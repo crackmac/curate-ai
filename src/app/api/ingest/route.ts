@@ -19,6 +19,8 @@ export async function POST() {
 
     let totalIngested = 0;
     const errors: string[] = [];
+    const skipped: string[] = [];
+    const empty: string[] = [];
 
     for (const source of allSources) {
       const override = overrideMap.get(source.id);
@@ -26,11 +28,16 @@ export async function POST() {
       if (!enabled) continue;
 
       const adapter = getAdapter(source.type);
-      if (!adapter) continue;
+      if (!adapter) {
+        skipped.push(`${source.slug}: no adapter for type "${source.type}"`);
+        continue;
+      }
 
       try {
         const config = JSON.parse(source.config);
         const items = await adapter.fetch(config);
+
+        if (items.length === 0) empty.push(source.slug);
 
         for (const item of items) {
           db.insert(contentItems)
@@ -55,7 +62,7 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({ ingested: totalIngested, errors });
+    return NextResponse.json({ ingested: totalIngested, errors, skipped, empty });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown error" },

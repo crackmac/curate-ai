@@ -30,6 +30,7 @@ export const sources = sqliteTable("sources", {
   isDefault: integer("is_default").notNull().default(0),
   vetted: integer("vetted").notNull().default(1),
   description: text("description"),
+  category: text("category").default("tech"),
   createdAt: text("created_at").notNull().default("(datetime('now'))"),
 });
 

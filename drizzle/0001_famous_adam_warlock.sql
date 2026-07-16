@@ -1,0 +1,1 @@
+ALTER TABLE `sources` ADD `category` text DEFAULT 'tech';
