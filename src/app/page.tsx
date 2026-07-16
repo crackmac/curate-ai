@@ -23,7 +23,7 @@ export default function Home() {
       <CategoryTabs selected={category} onChange={setCategory} />
 
       {isLoading ? (
-        <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
+        <div className="columns-[20rem] gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="break-inside-avoid mb-4">
               <SkeletonCard />

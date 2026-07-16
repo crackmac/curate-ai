@@ -22,7 +22,7 @@ export function ContentGrid({ items }: ContentGridProps) {
   }
 
   return (
-    <div className="columns-1 md:columns-2 lg:columns-3 gap-4">
+    <div className="columns-[20rem] gap-4">
       {items.map((item) => (
         <div key={item.id} className="break-inside-avoid mb-4">
           <ContentCard item={item} />
