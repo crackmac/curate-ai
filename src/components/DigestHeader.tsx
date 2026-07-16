@@ -15,6 +15,7 @@ interface DigestHeaderProps {
   date: string;
   total: number;
   onRefresh: () => void;
+  category?: string;
 }
 
 interface IngestResult {
@@ -24,7 +25,12 @@ interface IngestResult {
   empty: string[];
 }
 
-export function DigestHeader({ date, total, onRefresh }: DigestHeaderProps) {
+export function DigestHeader({
+  date,
+  total,
+  onRefresh,
+  category,
+}: DigestHeaderProps) {
   const [ingesting, setIngesting] = useState(false);
   const [curating, setCurating] = useState(false);
   const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
@@ -33,7 +39,11 @@ export function DigestHeader({ date, total, onRefresh }: DigestHeaderProps) {
   const handleIngest = async () => {
     setIngesting(true);
     try {
-      const res = await fetch("/api/ingest", { method: "POST" });
+      const url =
+        category && category !== "all"
+          ? `/api/ingest?category=${encodeURIComponent(category)}`
+          : "/api/ingest";
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         setIngestResult({

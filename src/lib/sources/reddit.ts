@@ -1,27 +1,22 @@
+import Parser from "rss-parser";
 import type { SourceAdapter, RawContentItem, SourceConfig } from "./types";
+import { stripHtml, extractImageFromContent } from "./rss";
 
-interface RedditPost {
-  data: {
-    id: string;
-    title: string;
-    selftext?: string;
-    url: string;
-    permalink: string;
-    author: string;
-    score: number;
-    num_comments: number;
-    created_utc: number;
-    thumbnail?: string;
-    preview?: {
-      images?: Array<{
-        source?: { url: string };
-      }>;
-    };
-    is_video?: boolean;
-    is_self?: boolean;
-    link_flair_text?: string;
-  };
-}
+// Reddit 403s the public .json endpoint for unauthenticated/datacenter clients
+// regardless of user-agent, but the per-subreddit Atom feed (/.rss) still
+// serves. We read that instead. A browser-like UA avoids the bot-UA block;
+// override via env if you hit rate limits or run an authenticated app.
+const REDDIT_USER_AGENT =
+  process.env.REDDIT_USER_AGENT ||
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+
+const parser = new Parser({
+  timeout: 20000,
+  headers: {
+    "User-Agent": REDDIT_USER_AGENT,
+    Accept: "application/atom+xml, application/rss+xml, */*",
+  },
+});
 
 export const redditAdapter: SourceAdapter = {
   id: "reddit",
@@ -30,47 +25,28 @@ export const redditAdapter: SourceAdapter = {
     const subreddit = config.subreddit;
     if (!subreddit) return [];
 
-    const res = await fetch(
-      `https://www.reddit.com/r/${subreddit}/hot.json?limit=25&raw_json=1`,
-      {
-        headers: {
-          "User-Agent": "CurateAI/1.0",
-        },
-      }
+    const feed = await parser.parseURL(
+      `https://www.reddit.com/r/${subreddit}/hot/.rss?limit=25`
     );
 
-    if (!res.ok) throw new Error(`Reddit API error: ${res.status}`);
-
-    const data = await res.json();
-    const posts: RedditPost[] = data.data.children;
     const items: RawContentItem[] = [];
+    for (const entry of feed.items.slice(0, 25)) {
+      if (!entry.title || !entry.link) continue;
 
-    for (const post of posts) {
-      const p = post.data;
-      if (p.title.startsWith("[removed]")) continue;
-
-      const previewUrl = p.preview?.images?.[0]?.source?.url;
-      const thumbnail =
-        previewUrl ||
-        (p.thumbnail && p.thumbnail.startsWith("http") ? p.thumbnail : undefined);
-
+      // rss-parser maps the Atom <id> ("t3_abc123") to guid.
+      const content = entry.content || entry.contentSnippet || "";
       items.push({
-        externalId: p.id,
-        type: p.is_self ? "social" : "article",
-        title: p.title,
-        summary: p.selftext ? p.selftext.slice(0, 300) : undefined,
-        url: p.is_self
-          ? `https://reddit.com${p.permalink}`
-          : p.url,
-        author: p.author,
-        thumbnailUrl: thumbnail,
-        publishedAt: new Date(p.created_utc * 1000).toISOString(),
+        externalId: entry.guid || entry.link,
+        type: "article",
+        title: entry.title,
+        summary: stripHtml(content).slice(0, 300),
+        url: entry.link,
+        author: entry.creator || undefined,
+        thumbnailUrl: extractImageFromContent(content),
+        publishedAt: entry.isoDate || entry.pubDate || undefined,
         metadata: {
-          score: p.score,
-          commentCount: p.num_comments,
           subreddit,
-          flair: p.link_flair_text || null,
-          redditUrl: `https://reddit.com${p.permalink}`,
+          redditUrl: entry.link,
         },
       });
     }

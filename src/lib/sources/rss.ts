@@ -44,11 +44,11 @@ export const rssAdapter: SourceAdapter = {
   },
 };
 
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 }
 
-function extractImageFromContent(html: string): string | undefined {
+export function extractImageFromContent(html: string): string | undefined {
   const match = html.match(/<img[^>]+src=["']([^"']+)["']/);
   return match?.[1];
 }
