@@ -14,6 +14,13 @@ export function runMigrations() {
     .get();
 
   if (tableExists) {
+    // Bootstrap already ran. Apply idempotent in-place column upgrades that the
+    // bootstrap-only migrate() below never reaches on an existing DB.
+    try {
+      raw.exec("ALTER TABLE sources ADD COLUMN category TEXT DEFAULT 'tech'");
+    } catch {
+      // column already present
+    }
     raw.close();
     return;
   }

@@ -8,6 +8,13 @@
       "when": 1778801256788,
       "tag": "0000_nasty_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784162074977,
+      "tag": "0001_famous_adam_warlock",
+      "breakpoints": true
     }
   ]
 }

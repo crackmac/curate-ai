@@ -6,10 +6,28 @@ import { eq } from "drizzle-orm";
 
 const USER_ID = 1;
 
-export async function POST() {
-  try {
+// Minimum gap (ms) between consecutive fetches of the same source type, to
+// stay under per-service rate limits. The ingest loop is already serial, so
+// this only paces same-type calls; alternating types incur no extra wait.
+const THROTTLE_MS: Record<string, number> = {
+  reddit: 5000, // Reddit's .rss burst-limits; ~5s keeps us under ~12 req/min
+  youtube: 1500,
+  bluesky: 500,
+  rss: 0,
+  hackernews: 0,
+};
 
-    const allSources = db.select().from(sources).all();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function POST(request: Request) {
+  try {
+    const categoryParam = new URL(request.url).searchParams.get("category");
+    const category =
+      categoryParam && categoryParam !== "all" ? categoryParam : null;
+
+    const allSources = category
+      ? db.select().from(sources).where(eq(sources.category, category)).all()
+      : db.select().from(sources).all();
     const overrides = db
       .select()
       .from(userSources)
@@ -19,6 +37,9 @@ export async function POST() {
 
     let totalIngested = 0;
     const errors: string[] = [];
+    const skipped: string[] = [];
+    const empty: string[] = [];
+    const lastFetchByType: Record<string, number> = {};
 
     for (const source of allSources) {
       const override = overrideMap.get(source.id);
@@ -26,11 +47,24 @@ export async function POST() {
       if (!enabled) continue;
 
       const adapter = getAdapter(source.type);
-      if (!adapter) continue;
+      if (!adapter) {
+        skipped.push(`${source.slug}: no adapter for type "${source.type}"`);
+        continue;
+      }
+
+      // Throttle: enforce the minimum gap since the last fetch of this type.
+      const minGap = THROTTLE_MS[source.type] ?? 0;
+      if (minGap > 0) {
+        const waitMs = minGap - (Date.now() - (lastFetchByType[source.type] ?? 0));
+        if (waitMs > 0) await sleep(waitMs);
+      }
+      lastFetchByType[source.type] = Date.now();
 
       try {
         const config = JSON.parse(source.config);
         const items = await adapter.fetch(config);
+
+        if (items.length === 0) empty.push(source.slug);
 
         for (const item of items) {
           db.insert(contentItems)
@@ -55,7 +89,7 @@ export async function POST() {
       }
     }
 
-    return NextResponse.json({ ingested: totalIngested, errors });
+    return NextResponse.json({ ingested: totalIngested, errors, skipped, empty });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown error" },

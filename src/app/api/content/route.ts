@@ -6,12 +6,21 @@ import type { CuratedContentItem } from "@/types";
 
 const USER_ID = 1;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
 
     const today = new Date().toISOString().split("T")[0];
+    const categoryParam = new URL(request.url).searchParams.get("category");
+    const category =
+      categoryParam && categoryParam !== "all" ? categoryParam : null;
 
     // Try curated items first
+    const curatedConds = [
+      eq(curatedItems.userId, USER_ID),
+      eq(curatedItems.digestDate, today),
+    ];
+    if (category) curatedConds.push(eq(sources.category, category));
+
     const curated = db
       .select({
         id: contentItems.id,
@@ -29,6 +38,7 @@ export async function GET() {
         sourceName: sources.name,
         sourceType: sources.type,
         sourceSlug: sources.slug,
+        sourceCategory: sources.category,
         score: curatedItems.score,
         explanation: curatedItems.explanation,
         reason: curatedItems.reason,
@@ -38,9 +48,7 @@ export async function GET() {
       .from(curatedItems)
       .innerJoin(contentItems, eq(curatedItems.contentItemId, contentItems.id))
       .innerJoin(sources, eq(contentItems.sourceId, sources.id))
-      .where(
-        and(eq(curatedItems.userId, USER_ID), eq(curatedItems.digestDate, today))
-      )
+      .where(and(...curatedConds))
       .orderBy(curatedItems.position)
       .all();
 
@@ -73,9 +81,11 @@ export async function GET() {
         sourceName: sources.name,
         sourceType: sources.type,
         sourceSlug: sources.slug,
+        sourceCategory: sources.category,
       })
       .from(contentItems)
       .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+      .where(category ? eq(sources.category, category) : undefined)
       .orderBy(desc(contentItems.publishedAt))
       .all();
 

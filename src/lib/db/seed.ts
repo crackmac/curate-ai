@@ -749,6 +749,98 @@ const defaultSources = [
     vetted: 1,
     description: "Syntax podcast, JS/CSS/Node courses",
   },
+
+  // ── Sports ───────────────────────────────────────────────────
+  {
+    slug: "rss/espn",
+    name: "ESPN",
+    type: "rss",
+    url: "https://www.espn.com/espn/rss/news",
+    config: JSON.stringify({ feedUrl: "https://www.espn.com/espn/rss/news" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "Top US sports headlines",
+    category: "sports",
+  },
+  {
+    slug: "reddit/r/sports",
+    name: "r/sports",
+    type: "reddit",
+    url: "https://reddit.com/r/sports",
+    config: JSON.stringify({ subreddit: "sports" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "General sports news and discussion",
+    category: "sports",
+  },
+  {
+    slug: "reddit/r/nba",
+    name: "r/nba",
+    type: "reddit",
+    url: "https://reddit.com/r/nba",
+    config: JSON.stringify({ subreddit: "nba" }),
+    isDefault: 0,
+    vetted: 1,
+    description: "NBA news and discussion",
+    category: "sports",
+  },
+  {
+    slug: "reddit/r/soccer",
+    name: "r/soccer",
+    type: "reddit",
+    url: "https://reddit.com/r/soccer",
+    config: JSON.stringify({ subreddit: "soccer" }),
+    isDefault: 0,
+    vetted: 1,
+    description: "Global football/soccer news",
+    category: "sports",
+  },
+
+  // ── Entertainment ────────────────────────────────────────────
+  {
+    slug: "rss/variety",
+    name: "Variety",
+    type: "rss",
+    url: "https://variety.com/feed/",
+    config: JSON.stringify({ feedUrl: "https://variety.com/feed/" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "Film, TV, and entertainment industry news",
+    category: "entertainment",
+  },
+  {
+    slug: "rss/hollywood-reporter",
+    name: "The Hollywood Reporter",
+    type: "rss",
+    url: "https://www.hollywoodreporter.com/feed/",
+    config: JSON.stringify({ feedUrl: "https://www.hollywoodreporter.com/feed/" }),
+    isDefault: 0,
+    vetted: 1,
+    description: "Entertainment business and celebrity news",
+    category: "entertainment",
+  },
+  {
+    slug: "reddit/r/movies",
+    name: "r/movies",
+    type: "reddit",
+    url: "https://reddit.com/r/movies",
+    config: JSON.stringify({ subreddit: "movies" }),
+    isDefault: 1,
+    vetted: 1,
+    description: "Movie news, reviews, and discussion",
+    category: "entertainment",
+  },
+  {
+    slug: "reddit/r/entertainment",
+    name: "r/entertainment",
+    type: "reddit",
+    url: "https://reddit.com/r/entertainment",
+    config: JSON.stringify({ subreddit: "entertainment" }),
+    isDefault: 0,
+    vetted: 1,
+    description: "Entertainment news across media",
+    category: "entertainment",
+  },
 ];
 
 export function seed() {
@@ -788,6 +880,19 @@ export function seed() {
   for (const [slug, isDefault] of defaultBySlug) {
     db.update(sources)
       .set({ isDefault })
+      .where(eq(sources.slug, slug))
+      .run();
+  }
+
+  // Sync category for seeded sources that declare one (onConflictDoNothing won't update them)
+  const categoryBySlug = new Map(
+    defaultSources
+      .filter((s): s is typeof s & { category: string } => "category" in s)
+      .map((s) => [s.slug, s.category])
+  );
+  for (const [slug, category] of categoryBySlug) {
+    db.update(sources)
+      .set({ category })
       .where(eq(sources.slug, slug))
       .run();
   }
