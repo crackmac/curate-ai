@@ -28,6 +28,7 @@ export async function GET() {
         description: s.description,
         isDefault: s.isDefault === 1,
         vetted: s.vetted === 1,
+        category: s.category ?? "tech",
         enabled: override ? override.enabled === 1 : s.isDefault === 1,
         addedByUser: override?.addedByUser === 1,
       };
@@ -45,12 +46,13 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sourceId, name, url, config, description } = body as {
+    const { sourceId, name, url, config, description, category } = body as {
       sourceId: number;
       name?: string;
       url?: string;
       config?: Record<string, unknown>;
       description?: string;
+      category?: string;
     };
 
     const existing = db.select().from(sources).where(eq(sources.id, sourceId)).get();
@@ -63,6 +65,7 @@ export async function PATCH(request: NextRequest) {
     if (url !== undefined) updates.url = url;
     if (config !== undefined) updates.config = JSON.stringify(config);
     if (description !== undefined) updates.description = description;
+    if (category !== undefined) updates.category = category;
 
     if (name !== undefined) {
       updates.slug = `${existing.type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -151,12 +154,13 @@ export async function PUT(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, type, url, config, description } = body as {
+    const { name, type, url, config, description, category } = body as {
       name: string;
       type: string;
       url: string;
       config: Record<string, unknown>;
       description?: string;
+      category?: string;
     };
 
     const slug = `${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -172,6 +176,7 @@ export async function POST(request: Request) {
         isDefault: 0,
         vetted: 0,
         description: description ?? null,
+        category: category ?? "tech",
       })
       .returning()
       .get();

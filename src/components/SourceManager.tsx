@@ -12,9 +12,12 @@ interface SourceItem {
   description: string | null;
   isDefault: boolean;
   vetted: boolean;
+  category: string;
   enabled: boolean;
   addedByUser: boolean;
 }
+
+const CATEGORIES = ["tech", "sports", "entertainment"];
 
 const typeIcons: Record<string, string> = {
   hackernews: "Y",
@@ -60,7 +63,7 @@ export function SourceManager() {
     });
   }
 
-  async function addSource(data: { name: string; type: string; url: string; config: Record<string, unknown>; description: string }) {
+  async function addSource(data: { name: string; type: string; url: string; config: Record<string, unknown>; description: string; category: string }) {
     const res = await fetch("/api/sources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -72,7 +75,7 @@ export function SourceManager() {
     }
   }
 
-  async function editSource(sourceId: number, data: { name: string; url: string; config: Record<string, unknown>; description: string }) {
+  async function editSource(sourceId: number, data: { name: string; url: string; config: Record<string, unknown>; description: string; category: string }) {
     const res = await fetch("/api/sources", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -222,12 +225,13 @@ function EditSourceForm({
   onCancel,
 }: {
   source: SourceItem;
-  onSave: (data: { name: string; url: string; config: Record<string, unknown>; description: string }) => void;
+  onSave: (data: { name: string; url: string; config: Record<string, unknown>; description: string; category: string }) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState(source.name);
   const [url, setUrl] = useState(source.url ?? "");
   const [description, setDescription] = useState(source.description ?? "");
+  const [category, setCategory] = useState(source.category);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -239,7 +243,7 @@ function EditSourceForm({
     else if (source.type === "youtube") config = { channelId: url };
     else if (source.type === "bluesky") config = { actor: url };
 
-    onSave({ name, url, config, description });
+    onSave({ name, url, config, description, category });
   }
 
   return (
@@ -263,6 +267,18 @@ function EditSourceForm({
             className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           />
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Category</label>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Description</label>
@@ -296,13 +312,14 @@ function AddSourceForm({
   onAdd,
   onCancel,
 }: {
-  onAdd: (data: { name: string; type: string; url: string; config: Record<string, unknown>; description: string }) => void;
+  onAdd: (data: { name: string; type: string; url: string; config: Record<string, unknown>; description: string; category: string }) => void;
   onCancel: () => void;
 }) {
   const [type, setType] = useState("rss");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("tech");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -314,7 +331,7 @@ function AddSourceForm({
     else if (type === "youtube") config = { channelId: url };
     else if (type === "bluesky") config = { actor: url };
 
-    onAdd({ name, type, url, config, description });
+    onAdd({ name, type, url, config, description, category });
   }
 
   const placeholders: Record<string, string> = {
@@ -341,15 +358,27 @@ function AddSourceForm({
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Source name"
+          <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Category</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
             className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
-          />
+          >
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
         </div>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Name</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Source name"
+          className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+        />
       </div>
       <div>
         <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">URL / Identifier</label>
