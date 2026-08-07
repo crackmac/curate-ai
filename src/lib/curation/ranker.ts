@@ -127,13 +127,17 @@ async function rankWithOllama(
 ): Promise<RankedItem[]> {
   const ollamaUrl = process.env.OLLAMA_URL ?? "http://localhost:11434";
   const ollamaModel = process.env.OLLAMA_MODEL ?? "llama3.1:8b";
+  const apiKey = process.env.OLLAMA_API_KEY;
 
-  const res = await fetch(`${ollamaUrl}/api/generate`, {
+  const res = await fetch(`${ollamaUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
     body: JSON.stringify({
       model: ollamaModel,
-      prompt,
+      messages: [{ role: "user", content: prompt }],
       stream: false,
       options: { temperature: 0.3, num_predict: 4096 },
     }),
@@ -142,7 +146,7 @@ async function rankWithOllama(
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
 
   const data = await res.json();
-  return parseResponse(data.response ?? "", candidates);
+  return parseResponse(data.message?.content ?? "", candidates);
 }
 
 export async function rankWithLLM(

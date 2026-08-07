@@ -78,9 +78,10 @@ Note: `runMigrations()` (`src/lib/db/migrate.ts`) applies the Drizzle migrations
 
 | Variable | Required | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | For AI curation | Claude Haiku ranking |
-| `OLLAMA_URL` | No (default `localhost:11434`) | Local LLM fallback |
-| `OLLAMA_MODEL` | No (default `llama3.1:8b`) | Ollama model name |
+| `ANTHROPIC_API_KEY` | For AI curation via Claude | Claude Haiku ranking; if unset, falls back to Ollama |
+| `OLLAMA_URL` | No (default `http://localhost:11434`) | Ollama endpoint — local server or a hosted API like `https://ollama.com` |
+| `OLLAMA_MODEL` | No (default `llama3.1:8b`) | Ollama model name (e.g. `glm-5.2:cloud` for Ollama's hosted cloud models) |
+| `OLLAMA_API_KEY` | For hosted Ollama endpoints | Sent as `Authorization: Bearer` when set; omitted for unauthenticated local servers |
 | `DATABASE_PATH` | No (default `./curate.db`) | SQLite database file path |
 | `INTERNAL_URL` | No (default `http://localhost:3000`) | Base URL for scheduler self-calls |
 | `YOUTUBE_API_KEY` | For YouTube source | YouTube Data API access |

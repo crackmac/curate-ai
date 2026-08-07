@@ -8,6 +8,8 @@ primary_region = "lax"
   DATABASE_PATH = "/data/curate.db"
   INTERNAL_URL = "http://localhost:3000"
   PORT = "3000"
+  OLLAMA_URL = "https://ollama.com"
+  OLLAMA_MODEL = "glm-5.2:cloud"
 
 [http_service]
   internal_port = 3000
