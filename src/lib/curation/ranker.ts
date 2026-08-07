@@ -89,7 +89,13 @@ function parseResponse(
       ...item,
       reason: VALID_REASONS.has(item.reason) ? item.reason : "topic_match",
     }));
-  } catch {
+  } catch (err) {
+    console.error(
+      "[ranker] Failed to parse LLM response as JSON, falling back to trending:",
+      err,
+      "\nRaw response (first 500 chars):",
+      text.slice(0, 500)
+    );
     return candidates.map((c) => ({
       id: c.id,
       score: Math.round(c.similarityScore * 100),

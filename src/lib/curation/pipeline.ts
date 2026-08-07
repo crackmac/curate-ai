@@ -26,7 +26,8 @@ export async function runCurationPipeline(userId: number) {
     .run();
 
   // 1. Generate embeddings for items that don't have them yet
-  await generateMissingEmbeddings();
+  const embedded = await generateMissingEmbeddings();
+  console.log(`[curate] Embedded ${embedded} previously-unembedded items`);
 
   // 2. Build user interest vector from positive interactions
   const interestVector = await buildInterestVector(userId);
@@ -51,6 +52,7 @@ export async function runCurationPipeline(userId: number) {
     .limit(400)
     .all();
 
+  console.log(`[curate] ${candidates.length} embedded candidates available`);
   if (candidates.length === 0) return { curated: 0 };
 
   // 4. Stage 1 — embedding similarity filter
@@ -126,6 +128,10 @@ export async function runCurationPipeline(userId: number) {
 
   let rankedItems;
 
+  console.log(
+    `[curate] Ranking ${topCandidates.length} candidates via ${process.env.ANTHROPIC_API_KEY ? "Anthropic" : "Ollama"}...`
+  );
+
   try {
     rankedItems = await rankWithLLM(
       topCandidates.map((c) => ({
@@ -142,7 +148,9 @@ export async function runCurationPipeline(userId: number) {
       recentSaves,
       recentDislikes
     );
-  } catch {
+    console.log(`[curate] LLM ranking succeeded for ${rankedItems.length} items`);
+  } catch (err) {
+    console.error("[curate] LLM ranking failed, falling back to trending:", err);
     rankedItems = topCandidates.map((c) => ({
       id: c.id,
       score: Math.round(c.similarityScore * 100),
@@ -225,6 +233,7 @@ export async function runCurationPipeline(userId: number) {
       .run();
   }
 
+  console.log(`[curate] Wrote ${digest.length} curated items for ${today}`);
   return { curated: digest.length, date: today };
 }
 
