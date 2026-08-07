@@ -246,10 +246,13 @@ async function generateMissingEmbeddings() {
     })
     .from(contentItems)
     .where(isNull(contentItems.embedding))
-    .limit(500)
+    .limit(100)
     .all();
 
-  const BATCH_SIZE = 10;
+  // ponytail: onnxruntime-node's per-call tensor buffers pile up faster than
+  // V8 reclaims them on a memory-constrained machine — low concurrency and a
+  // small per-run cap keep peak RSS bounded regardless of backlog size.
+  const BATCH_SIZE = 3;
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
     const batch = items.slice(i, i + BATCH_SIZE);
     await Promise.all(
@@ -261,6 +264,9 @@ async function generateMissingEmbeddings() {
           .where(eq(contentItems.id, item.id))
           .run();
       })
+    );
+    console.log(
+      `[curate] Embedded batch ${i / BATCH_SIZE + 1}/${Math.ceil(items.length / BATCH_SIZE)} (${Math.min(i + BATCH_SIZE, items.length)}/${items.length}), rss=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`
     );
   }
 
