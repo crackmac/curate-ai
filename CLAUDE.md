@@ -30,17 +30,17 @@ CurateAI is a Next.js 16 app that aggregates content from multiple sources, rank
 Sources → Ingest API → content_items table → Curation Pipeline → curated_items table → Digest UI
 ```
 
-**Ingestion** (`POST /api/ingest`): Iterates enabled sources, calls the matching adapter, writes raw items to `content_items`. Triggered by in-process `node-cron` scheduler every 4 hours.
+**Ingestion** (`POST /api/ingest`, optional `?category=` to scope to one category): Iterates enabled sources, calls the matching adapter, writes raw items to `content_items`. Triggered by in-process `node-cron` schedules per category (`src/lib/scheduler.ts`): tech every 4h, sports every 6h, entertainment every 12h, uncategorized sources every 4h (offset).
 
 **Curation** (`POST /api/curate`): Three-stage pipeline in `pipeline.ts`. It pulls the 400 most-recent embedded items, then Stage 1 ranks them by embedding cosine similarity against a time-decayed user interest vector and keeps the top `MAX_CANDIDATES` (100). If the user has no interest signal yet, Stage 1 is skipped and the 100 most-recent items are used. Stage 2 sends those to an LLM (Claude Haiku `claude-haiku-4-5-20251001` via Anthropic API, else Ollama fallback) for scoring, explanation, and reason tagging. Stage 3 assembles the digest: scores are boosted for cross-source items, then a diversity cap (`max(3, ceil(digestSize / uniqueSourceTypes))`) limits items per source type, with an overflow pass filling remaining slots. `digestSize` defaults to 20. Triggered by the `node-cron` scheduler daily at 6am UTC.
 
-**Serving** (`GET /api/content`): Returns today's curated digest. Falls back to round-robin recent content if no curation exists yet.
+**Serving** (`GET /api/content`, optional `?category=`): Returns today's curated digest. Falls back to round-robin recent content if no curation exists yet. `GET /api/categories` lists categories; `GET/POST /api/preferences/topic-scores` reads/updates per-topic affinity scores.
 
 **Feedback** (`POST /api/interact`): Records a `click` / `save` / `dismiss` / `less_like_this` interaction against a content item. Saves and dismissals feed back into the interest vector and the LLM prompt's "recently saved / disliked" hints on the next curation run.
 
 ### Source adapters
 
-Each adapter in `src/lib/sources/` implements the `SourceAdapter` interface: an `id` string and a `fetch(config)` method returning `RawContentItem[]`. Adapters: `hackernews`, `reddit`, `reddit` (subreddit via config), `rss`, `youtube`, `bluesky`. Register new adapters in `src/lib/sources/index.ts`.
+Each adapter in `src/lib/sources/` implements the `SourceAdapter` interface: an `id` string and a `fetch(config)` method returning `RawContentItem[]`. Adapters: `hackernews`, `reddit` (subreddit via config), `rss`, `youtube`, `bluesky`. Register new adapters in `src/lib/sources/index.ts`.
 
 ### Curation pipeline (`src/lib/curation/`)
 
@@ -60,7 +60,7 @@ The `seed()` function runs at server startup via `instrumentation.ts` to ensure 
 ### Frontend
 
 - Client components using SWR for data fetching (`useDigest`, `useInteraction` hooks).
-- Two pages: `/` (digest grid) and `/settings` (source management).
+- Two pages: `/` (digest grid with `CategoryTabs` filtering) and `/settings` (source management, plus `TopicManager` and `TopicScoreChart` for topic affinity).
 - Tailwind CSS v4 with dark mode support.
 - Icons from `lucide-react`.
 
@@ -72,7 +72,7 @@ All API routes hardcode `USER_ID = 1`. Multi-user support is schema-ready but no
 
 Hosted on Fly.io (`fly.toml`, region `lax`) as a single-machine deployment with a persistent volume `curate_data` mounted at `/data`. The `instrumentation.ts` `register()` hook runs on server boot (Node runtime only): it calls `runMigrations()`, then `seed()`, then `startScheduler()`. Docker image uses Next.js standalone output mode.
 
-Note: `runMigrations()` is bootstrap-only — it applies the Drizzle migrations *only if the `sources` table does not yet exist*, then no-ops on every subsequent boot. It does not apply incremental migrations to an existing DB. After changing the schema, apply migrations manually (`npx drizzle-kit migrate` or `push`) — a running instance will not pick them up on restart.
+Note: `runMigrations()` (`src/lib/db/migrate.ts`) applies the Drizzle migrations in full *only if the `sources` table does not yet exist*. On an existing DB it doesn't re-run the migration set, but it still applies specific hand-coded idempotent column backfills (e.g. `ALTER TABLE sources ADD COLUMN category`) on every boot. It does not apply new incremental Drizzle migrations to an existing DB — after changing the schema, apply migrations manually (`npx drizzle-kit migrate` or `push`).
 
 ## Environment variables
 
@@ -83,3 +83,5 @@ Note: `runMigrations()` is bootstrap-only — it applies the Drizzle migrations 
 | `OLLAMA_MODEL` | No (default `llama3.1:8b`) | Ollama model name |
 | `DATABASE_PATH` | No (default `./curate.db`) | SQLite database file path |
 | `INTERNAL_URL` | No (default `http://localhost:3000`) | Base URL for scheduler self-calls |
+| `YOUTUBE_API_KEY` | For YouTube source | YouTube Data API access |
+| `REDDIT_USER_AGENT` | No | User-Agent header for Reddit `.rss` requests |
