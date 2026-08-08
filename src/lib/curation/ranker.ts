@@ -139,7 +139,8 @@ async function rankWithOllama(
       model: ollamaModel,
       messages: [{ role: "user", content: prompt }],
       stream: false,
-      options: { temperature: 0.3, num_predict: 4096 },
+      think: false,
+      options: { temperature: 0.3, num_predict: 8192 },
     }),
   });
 
