@@ -3,9 +3,11 @@ import { runCurationPipeline } from "@/lib/curation/pipeline";
 
 const USER_ID = 1;
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const result = await runCurationPipeline(USER_ID);
+    const categoryParam = new URL(request.url).searchParams.get("category");
+    const category = categoryParam && categoryParam !== "all" ? categoryParam : undefined;
+    const result = await runCurationPipeline(USER_ID, category);
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { sources, userSources, contentItems, curatedItems, interactions } from "@/lib/db/schema";
+import { sources, userSources, contentItems, curatedItems, interactions, categories } from "@/lib/db/schema";
 import { eq, inArray } from "drizzle-orm";
 
 const USER_ID = 1;
@@ -165,6 +165,8 @@ export async function POST(request: Request) {
 
     const slug = `${type}/${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
+    const defaultCategory = db.select().from(categories).limit(1).get()?.slug;
+
     const result = db
       .insert(sources)
       .values({
@@ -176,7 +178,7 @@ export async function POST(request: Request) {
         isDefault: 0,
         vetted: 0,
         description: description ?? null,
-        category: category ?? "tech",
+        category: category ?? defaultCategory,
       })
       .returning()
       .get();

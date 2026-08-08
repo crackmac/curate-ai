@@ -34,6 +34,15 @@ export const sources = sqliteTable("sources", {
   createdAt: text("created_at").notNull().default("(datetime('now'))"),
 });
 
+export const categories = sqliteTable("categories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  ingestCron: text("ingest_cron").notNull(),
+  curateCron: text("curate_cron").notNull(),
+  createdAt: text("created_at").notNull().default("(datetime('now'))"),
+});
+
 export const userSources = sqliteTable(
   "user_sources",
   {

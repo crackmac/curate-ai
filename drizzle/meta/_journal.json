@@ -15,6 +15,13 @@
       "when": 1784162074977,
       "tag": "0001_famous_adam_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786151008220,
+      "tag": "0002_nervous_ares",
+      "breakpoints": true
     }
   ]
 }

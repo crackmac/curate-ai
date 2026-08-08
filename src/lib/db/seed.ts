@@ -1,6 +1,12 @@
 import { db } from "./index";
-import { sources, users, userPreferences } from "./schema";
+import { sources, users, userPreferences, categories } from "./schema";
 import { eq } from "drizzle-orm";
+
+const defaultCategories = [
+  { slug: "tech", name: "Tech", ingestCron: "0 */4 * * *", curateCron: "0 7,13,19 * * *" },
+  { slug: "sports", name: "Sports", ingestCron: "15 */6 * * *", curateCron: "0 6 * * *" },
+  { slug: "entertainment", name: "Entertainment", ingestCron: "30 */12 * * *", curateCron: "0 6 * * *" },
+];
 
 const defaultSources = [
   // ── Hacker News ──────────────────────────────────────────────
@@ -1987,6 +1993,17 @@ const defaultSources = [
 ];
 
 export function seed() {
+  for (const category of defaultCategories) {
+    db.insert(categories).values(category).onConflictDoNothing().run();
+  }
+
+  for (const [slug, fields] of new Map(defaultCategories.map((c) => [c.slug, c]))) {
+    db.update(categories)
+      .set({ name: fields.name, ingestCron: fields.ingestCron, curateCron: fields.curateCron })
+      .where(eq(categories.slug, slug))
+      .run();
+  }
+
   for (const source of defaultSources) {
     db.insert(sources).values(source).onConflictDoNothing().run();
   }

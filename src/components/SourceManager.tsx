@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Plus, AlertTriangle, Pencil, Trash2, X, Check } from "lucide-react";
+import { useCategories } from "@/hooks/useCategories";
 
 interface SourceItem {
   id: number;
@@ -16,8 +17,6 @@ interface SourceItem {
   enabled: boolean;
   addedByUser: boolean;
 }
-
-const CATEGORIES = ["tech", "sports", "entertainment"];
 
 const typeIcons: Record<string, string> = {
   hackernews: "Y",
@@ -36,6 +35,8 @@ const typeColors: Record<string, string> = {
 };
 
 export function SourceManager() {
+  const { categories } = useCategories();
+  const categorySlugs = categories.map((c) => c.slug);
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -119,6 +120,7 @@ export function SourceManager() {
                 {editingId === source.id ? (
                   <EditSourceForm
                     source={source}
+                    categories={categorySlugs}
                     onSave={(data) => editSource(source.id, data)}
                     onCancel={() => setEditingId(null)}
                   />
@@ -205,7 +207,7 @@ export function SourceManager() {
       ))}
 
       {showAdd ? (
-        <AddSourceForm onAdd={addSource} onCancel={() => setShowAdd(false)} />
+        <AddSourceForm categories={categorySlugs} onAdd={addSource} onCancel={() => setShowAdd(false)} />
       ) : (
         <button
           onClick={() => setShowAdd(true)}
@@ -221,10 +223,12 @@ export function SourceManager() {
 
 function EditSourceForm({
   source,
+  categories,
   onSave,
   onCancel,
 }: {
   source: SourceItem;
+  categories: string[];
   onSave: (data: { name: string; url: string; config: Record<string, unknown>; description: string; category: string }) => void;
   onCancel: () => void;
 }) {
@@ -275,7 +279,7 @@ function EditSourceForm({
           onChange={(e) => setCategory(e.target.value)}
           className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
         >
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
@@ -309,9 +313,11 @@ function EditSourceForm({
 }
 
 function AddSourceForm({
+  categories,
   onAdd,
   onCancel,
 }: {
+  categories: string[];
   onAdd: (data: { name: string; type: string; url: string; config: Record<string, unknown>; description: string; category: string }) => void;
   onCancel: () => void;
 }) {
@@ -319,11 +325,11 @@ function AddSourceForm({
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("tech");
+  const [category, setCategory] = useState(categories[0] ?? "");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name || !url) return;
+    if (!name || !url || !category) return;
 
     let config: Record<string, unknown> = {};
     if (type === "rss") config = { feedUrl: url };
@@ -364,7 +370,7 @@ function AddSourceForm({
             onChange={(e) => setCategory(e.target.value)}
             className="w-full rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
           >
-            {CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>

@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       .innerJoin(contentItems, eq(curatedItems.contentItemId, contentItems.id))
       .innerJoin(sources, eq(contentItems.sourceId, sources.id))
       .where(and(...curatedConds))
-      .orderBy(curatedItems.position)
+      .orderBy(category ? curatedItems.position : desc(curatedItems.score))
       .all();
 
     if (curated.length > 0) {

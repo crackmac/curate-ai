@@ -22,6 +22,14 @@ export function runMigrations() {
     } catch {
       // column already present
     }
+    raw.exec(`CREATE TABLE IF NOT EXISTS categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      ingest_cron TEXT NOT NULL,
+      curate_cron TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
     raw.close();
     return;
   }

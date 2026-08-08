@@ -76,7 +76,11 @@ export function DigestHeader({
   const handleCurate = async () => {
     setCurating(true);
     try {
-      await fetch("/api/curate", { method: "POST" });
+      const url =
+        category && category !== "all"
+          ? `/api/curate?category=${encodeURIComponent(category)}`
+          : "/api/curate";
+      await fetch(url, { method: "POST" });
       onRefresh();
     } finally {
       setCurating(false);

@@ -17,16 +17,40 @@ import { rankWithLLM, type RankedItem } from "./ranker";
 
 const MAX_CANDIDATES = 100;
 
-export async function runCurationPipeline(userId: number) {
+export async function runCurationPipeline(userId: number, category?: string) {
   const today = new Date().toISOString().split("T")[0];
 
-  // Clear any existing curation for today so we can re-curate
-  db.delete(curatedItems)
-    .where(and(eq(curatedItems.userId, userId), eq(curatedItems.digestDate, today)))
-    .run();
+  // Clear any existing curation for today so we can re-curate. When scoped to
+  // a category, only clear that category's slice so other categories'
+  // same-day digests aren't disturbed.
+  if (category) {
+    const categoryItemIds = db
+      .select({ id: contentItems.id })
+      .from(contentItems)
+      .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+      .where(eq(sources.category, category))
+      .all()
+      .map((r) => r.id);
 
-  // 1. Generate embeddings for items that don't have them yet
-  const embedded = await generateMissingEmbeddings();
+    db.delete(curatedItems)
+      .where(
+        and(
+          eq(curatedItems.userId, userId),
+          eq(curatedItems.digestDate, today),
+          inArray(curatedItems.contentItemId, categoryItemIds)
+        )
+      )
+      .run();
+  } else {
+    db.delete(curatedItems)
+      .where(and(eq(curatedItems.userId, userId), eq(curatedItems.digestDate, today)))
+      .run();
+  }
+
+  // 1. Generate embeddings for items that don't have them yet, scoped to this
+  // category so a category with a small backlog isn't starved behind a
+  // larger category's backlog when each curates on its own cadence.
+  const embedded = await generateMissingEmbeddings(category);
   console.log(`[curate] Embedded ${embedded} previously-unembedded items`);
 
   // 2. Build user interest vector from positive interactions
@@ -47,7 +71,11 @@ export async function runCurationPipeline(userId: number) {
     })
     .from(contentItems)
     .innerJoin(sources, eq(contentItems.sourceId, sources.id))
-    .where(isNotNull(contentItems.embedding))
+    .where(
+      category
+        ? and(isNotNull(contentItems.embedding), eq(sources.category, category))
+        : isNotNull(contentItems.embedding)
+    )
     .orderBy(desc(contentItems.publishedAt))
     .limit(400)
     .all();
@@ -89,7 +117,7 @@ export async function runCurationPipeline(userId: number) {
   }
 
   // 4b. Cross-source signal detection
-  const crossSourceMap = detectCrossSourceSignals(topCandidates.map((c) => c.id));
+  const crossSourceMap = detectCrossSourceSignals(topCandidates.map((c) => c.id), category);
 
   // 5. Stage 2 — Claude ranking
   const prefs = db
@@ -237,17 +265,29 @@ export async function runCurationPipeline(userId: number) {
   return { curated: digest.length, date: today };
 }
 
-async function generateMissingEmbeddings() {
-  const items = db
-    .select({
-      id: contentItems.id,
-      title: contentItems.title,
-      summary: contentItems.summary,
-    })
-    .from(contentItems)
-    .where(isNull(contentItems.embedding))
-    .limit(100)
-    .all();
+async function generateMissingEmbeddings(category?: string) {
+  const items = category
+    ? db
+        .select({
+          id: contentItems.id,
+          title: contentItems.title,
+          summary: contentItems.summary,
+        })
+        .from(contentItems)
+        .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+        .where(and(isNull(contentItems.embedding), eq(sources.category, category)))
+        .limit(100)
+        .all()
+    : db
+        .select({
+          id: contentItems.id,
+          title: contentItems.title,
+          summary: contentItems.summary,
+        })
+        .from(contentItems)
+        .where(isNull(contentItems.embedding))
+        .limit(100)
+        .all();
 
   // ponytail: onnxruntime-node's per-call tensor buffers pile up faster than
   // V8 reclaims them on a memory-constrained machine — low concurrency and a
@@ -287,7 +327,10 @@ function titlesMatchFuzzy(a: string, b: string): boolean {
   return false;
 }
 
-function detectCrossSourceSignals(candidateIds: number[]): Map<number, number> {
+function detectCrossSourceSignals(
+  candidateIds: number[],
+  category?: string
+): Map<number, number> {
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const recentItems = db
     .select({
@@ -296,7 +339,12 @@ function detectCrossSourceSignals(candidateIds: number[]): Map<number, number> {
       sourceId: contentItems.sourceId,
     })
     .from(contentItems)
-    .where(gte(contentItems.publishedAt, cutoff))
+    .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+    .where(
+      category
+        ? and(gte(contentItems.publishedAt, cutoff), eq(sources.category, category))
+        : gte(contentItems.publishedAt, cutoff)
+    )
     .all();
 
   const candidateSet = new Set(candidateIds);
