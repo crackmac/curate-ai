@@ -146,6 +146,15 @@ async function rankWithOllama(
   if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
 
   const data = await res.json();
+  console.log(
+    "[ranker] Ollama response shape:",
+    JSON.stringify({
+      done_reason: data.done_reason,
+      message_keys: data.message ? Object.keys(data.message) : null,
+      content_length: data.message?.content?.length ?? 0,
+      thinking_length: data.message?.thinking?.length ?? 0,
+    })
+  );
   return parseResponse(data.message?.content ?? "", candidates);
 }
 
