@@ -2,6 +2,12 @@
 
 Research compiled April 2026. Sources organized by platform and topic for use as CurateAI content feeds.
 
+## Operational Notes (Aug 2026)
+
+- Provider rate limits are expected periodically for Reddit and YouTube sources; ingest now applies throttling and retry/backoff.
+- Some feeds/accounts can be valid historically but currently return empty or error responses (for example, deleted/moved RSS URLs or invalid BlueSky actor handles).
+- If a source repeatedly fails, prefer disabling it in settings or correcting its source config before re-enabling.
+
 ---
 
 ## Table of Contents

@@ -8,6 +8,37 @@ const parser = new Parser({
   },
 });
 
+async function parseFeed(feedUrl: string) {
+  try {
+    return await parser.parseURL(feedUrl);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+
+    if (/404/.test(message)) {
+      return { title: "", items: [] };
+    }
+
+    if (/constructor/.test(message)) {
+      const res = await fetch(feedUrl, {
+        headers: { "User-Agent": "CurateAI/1.0" },
+      });
+
+      if (res.status === 404) {
+        return { title: "", items: [] };
+      }
+
+      if (!res.ok) {
+        throw new Error(`RSS fetch error: ${res.status}`);
+      }
+
+      const xml = await res.text();
+      return await parser.parseString(xml);
+    }
+
+    throw err;
+  }
+}
+
 export const rssAdapter: SourceAdapter = {
   id: "rss",
 
@@ -15,7 +46,7 @@ export const rssAdapter: SourceAdapter = {
     const feedUrl = config.feedUrl;
     if (!feedUrl) return [];
 
-    const feed = await parser.parseURL(feedUrl);
+    const feed = await parseFeed(feedUrl);
     const items: RawContentItem[] = [];
 
     for (const entry of feed.items.slice(0, 25)) {
@@ -27,7 +58,7 @@ export const rssAdapter: SourceAdapter = {
         title: entry.title,
         summary: stripHtml(entry.contentSnippet || entry.content || "").slice(
           0,
-          300
+          300,
         ),
         url: entry.link,
         author: entry.creator || entry["dc:creator"] || undefined,
@@ -45,7 +76,10 @@ export const rssAdapter: SourceAdapter = {
 };
 
 export function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function extractImageFromContent(html: string): string | undefined {

@@ -18,6 +18,31 @@ const parser = new Parser({
   },
 });
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function parseRedditFeedWithRetry(url: string) {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await parser.parseURL(url);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isRateLimited = /429|rate limit/i.test(message);
+      const isLastAttempt = attempt === maxAttempts;
+
+      if (!isRateLimited || isLastAttempt) {
+        throw err;
+      }
+
+      const delayMs = 4000 * attempt;
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error("Reddit feed fetch failed after retries");
+}
+
 export const redditAdapter: SourceAdapter = {
   id: "reddit",
 
@@ -25,8 +50,8 @@ export const redditAdapter: SourceAdapter = {
     const subreddit = config.subreddit;
     if (!subreddit) return [];
 
-    const feed = await parser.parseURL(
-      `https://www.reddit.com/r/${subreddit}/hot/.rss?limit=25`
+    const feed = await parseRedditFeedWithRetry(
+      `https://www.reddit.com/r/${subreddit}/hot/.rss?limit=25`,
     );
 
     const items: RawContentItem[] = [];
