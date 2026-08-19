@@ -27,18 +27,48 @@ interface YouTubeVideoItem {
   };
 }
 
-async function resolveChannelId(input: string, apiKey: string): Promise<string | null> {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchYouTubeJson(url: string): Promise<Response> {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res;
+
+    const retryable = res.status === 429 || res.status >= 500;
+    const isLastAttempt = attempt === maxAttempts;
+
+    if (!retryable || isLastAttempt) {
+      return res;
+    }
+
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const delayMs =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : 2000 * attempt;
+    await sleep(delayMs);
+  }
+
+  return fetch(url);
+}
+
+async function resolveChannelId(
+  input: string,
+  apiKey: string,
+): Promise<string | null> {
   if (input.startsWith("UC") && !input.includes("/")) return input;
 
   const handleMatch = input.match(/@([\w.-]+)/);
   if (handleMatch) {
-    const res = await fetch(
+    const res = await fetchYouTubeJson(
       `${YOUTUBE_API}/channels?` +
         new URLSearchParams({
           key: apiKey,
           forHandle: handleMatch[1],
           part: "id",
-        })
+        }),
     );
     if (res.ok) {
       const data = await res.json();
@@ -48,13 +78,13 @@ async function resolveChannelId(input: string, apiKey: string): Promise<string |
 
   const usernameMatch = input.match(/\/(?:c|user)\/([\w.-]+)/);
   if (usernameMatch) {
-    const res = await fetch(
+    const res = await fetchYouTubeJson(
       `${YOUTUBE_API}/channels?` +
         new URLSearchParams({
           key: apiKey,
           forUsername: usernameMatch[1],
           part: "id",
-        })
+        }),
     );
     if (res.ok) {
       const data = await res.json();
@@ -76,9 +106,10 @@ export const youtubeAdapter: SourceAdapter = {
     if (!rawChannelId) return [];
 
     const channelId = await resolveChannelId(rawChannelId, apiKey);
-    if (!channelId) throw new Error(`Could not resolve channel: ${rawChannelId}`);
+    if (!channelId)
+      throw new Error(`Could not resolve channel: ${rawChannelId}`);
 
-    const searchRes = await fetch(
+    const searchRes = await fetchYouTubeJson(
       `${YOUTUBE_API}/search?` +
         new URLSearchParams({
           key: apiKey,
@@ -87,7 +118,7 @@ export const youtubeAdapter: SourceAdapter = {
           order: "date",
           maxResults: "10",
           type: "video",
-        })
+        }),
     );
 
     if (!searchRes.ok)
@@ -99,13 +130,13 @@ export const youtubeAdapter: SourceAdapter = {
     if (searchItems.length === 0) return [];
 
     const videoIds = searchItems.map((item) => item.id.videoId).join(",");
-    const detailsRes = await fetch(
+    const detailsRes = await fetchYouTubeJson(
       `${YOUTUBE_API}/videos?` +
         new URLSearchParams({
           key: apiKey,
           id: videoIds,
           part: "contentDetails,statistics",
-        })
+        }),
     );
 
     const detailsData = detailsRes.ok ? await detailsRes.json() : { items: [] };

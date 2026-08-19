@@ -57,10 +57,13 @@ async function searchPosts(query: string): Promise<RawContentItem[]> {
         q: query,
         limit: "25",
         sort: "top",
-      })
+      }),
   );
 
-  if (!res.ok) throw new Error(`BlueSky search error: ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 400) return [];
+    throw new Error(`BlueSky search error: ${res.status}`);
+  }
 
   const data = await res.json();
   return (data.posts || []).map(mapPost);
@@ -73,22 +76,31 @@ async function fetchAuthorFeed(actor: string): Promise<RawContentItem[]> {
         actor,
         limit: "25",
         filter: "posts_no_replies",
-      })
+      }),
   );
 
-  if (!res.ok) throw new Error(`BlueSky author feed error: ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 400) return [];
+    throw new Error(`BlueSky author feed error: ${res.status}`);
+  }
 
   const data = await res.json();
-  return (data.feed || []).map((item: { post: BskyPost }) => mapPost(item.post));
+  return (data.feed || []).map((item: { post: BskyPost }) =>
+    mapPost(item.post),
+  );
 }
 
 function mapPost(post: BskyPost): RawContentItem {
   const external = post.embed?.external;
   const image = post.embed?.images?.[0]?.thumb;
 
-  const url = external?.uri || `https://bsky.app/profile/${post.author.handle}/post/${post.uri.split("/").pop()}`;
+  const url =
+    external?.uri ||
+    `https://bsky.app/profile/${post.author.handle}/post/${post.uri.split("/").pop()}`;
   const title = external?.title || post.record.text.slice(0, 120);
-  const summary = external?.description || (external?.title ? post.record.text.slice(0, 300) : undefined);
+  const summary =
+    external?.description ||
+    (external?.title ? post.record.text.slice(0, 300) : undefined);
 
   return {
     externalId: post.cid,
