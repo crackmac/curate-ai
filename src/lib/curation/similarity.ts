@@ -15,7 +15,7 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 export function rankBySimilarity(
   candidates: { id: number; embedding: Float32Array }[],
-  interestVector: Float32Array
+  interestVector: Float32Array,
 ): { id: number; similarity: number }[] {
   return candidates
     .map((c) => ({
@@ -27,7 +27,7 @@ export function rankBySimilarity(
 
 export function computeInterestVector(
   embeddings: Float32Array[],
-  decayFactor = 0.9
+  decayFactor = 0.9,
 ): Float32Array {
   if (embeddings.length === 0) return new Float32Array(384);
 
@@ -37,7 +37,9 @@ export function computeInterestVector(
   let weight = 1;
   let totalWeight = 0;
 
-  for (let i = embeddings.length - 1; i >= 0; i--) {
+  // Embeddings are passed in newest-first order, so apply the highest weight
+  // to index 0 and decay as interactions get older.
+  for (let i = 0; i < embeddings.length; i++) {
     for (let d = 0; d < dim; d++) {
       result[d] += embeddings[i][d] * weight;
     }

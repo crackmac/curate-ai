@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { contentItems, curatedItems, sources } from "@/lib/db/schema";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, gte, lt } from "drizzle-orm";
 import type { CuratedContentItem } from "@/types";
 
 const USER_ID = 1;
+const FALLBACK_RECENT_DAYS = 7;
+const FALLBACK_LIMIT = 30;
 
 export async function GET(request: Request) {
   try {
-
     const today = new Date().toISOString().split("T")[0];
     const categoryParam = new URL(request.url).searchParams.get("category");
     const category =
@@ -63,8 +64,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ items, date: today, total: items.length });
     }
 
-    // Fallback: round-robin mix of recent content
-    const rows = db
+    // Fallback: prefer recent rows first, with older backfill when needed.
+    const recentCutoffIso = new Date(
+      Date.now() - FALLBACK_RECENT_DAYS * 24 * 60 * 60 * 1000,
+    ).toISOString();
+
+    const recentRows = db
       .select({
         id: contentItems.id,
         sourceId: contentItems.sourceId,
@@ -85,9 +90,55 @@ export async function GET(request: Request) {
       })
       .from(contentItems)
       .innerJoin(sources, eq(contentItems.sourceId, sources.id))
-      .where(category ? eq(sources.category, category) : undefined)
+      .where(
+        category
+          ? and(
+              eq(sources.category, category),
+              gte(contentItems.publishedAt, recentCutoffIso),
+            )
+          : gte(contentItems.publishedAt, recentCutoffIso),
+      )
       .orderBy(desc(contentItems.publishedAt))
+      .limit(FALLBACK_LIMIT)
       .all();
+
+    const olderRows =
+      recentRows.length < FALLBACK_LIMIT
+        ? db
+            .select({
+              id: contentItems.id,
+              sourceId: contentItems.sourceId,
+              externalId: contentItems.externalId,
+              type: contentItems.type,
+              title: contentItems.title,
+              summary: contentItems.summary,
+              url: contentItems.url,
+              author: contentItems.author,
+              thumbnailUrl: contentItems.thumbnailUrl,
+              metadata: contentItems.metadata,
+              fetchedAt: contentItems.fetchedAt,
+              publishedAt: contentItems.publishedAt,
+              sourceName: sources.name,
+              sourceType: sources.type,
+              sourceSlug: sources.slug,
+              sourceCategory: sources.category,
+            })
+            .from(contentItems)
+            .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+            .where(
+              category
+                ? and(
+                    eq(sources.category, category),
+                    lt(contentItems.publishedAt, recentCutoffIso),
+                  )
+                : lt(contentItems.publishedAt, recentCutoffIso),
+            )
+            .orderBy(desc(contentItems.publishedAt))
+            .limit(FALLBACK_LIMIT - recentRows.length)
+            .all()
+        : [];
+
+    const rows = [...recentRows, ...olderRows];
 
     const grouped = new Map<string, typeof rows>();
     for (const row of rows) {
@@ -98,9 +149,12 @@ export async function GET(request: Request) {
 
     const mixed: typeof rows = [];
     const iterators = [...grouped.values()].map((arr) => ({ arr, idx: 0 }));
-    while (mixed.length < 30 && iterators.some((it) => it.idx < it.arr.length)) {
+    while (
+      mixed.length < FALLBACK_LIMIT &&
+      iterators.some((it) => it.idx < it.arr.length)
+    ) {
       for (const it of iterators) {
-        if (it.idx < it.arr.length && mixed.length < 30) {
+        if (it.idx < it.arr.length && mixed.length < FALLBACK_LIMIT) {
           mixed.push(it.arr[it.idx++]);
         }
       }
@@ -121,7 +175,7 @@ export async function GET(request: Request) {
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
