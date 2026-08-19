@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CurateAI
 
-## Getting Started
+CurateAI is a Next.js 16 app that ingests content from multiple sources, ranks it in a multi-stage curation pipeline, and serves a daily digest by category.
 
-First, run the development server:
+## Local Development
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Common Commands
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run lint
+npm test
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Build and Runtime Notes
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- The default production build uses webpack for stability: `next build --webpack`.
+- The app uses local Geist package imports (not Google font fetch at build-time).
+- SQLite uses `better-sqlite3`; Linux build images need `python3`, `make`, and `g++` available for native module builds.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment Notes (Fly.io)
 
-## Learn More
+- `DATABASE_PATH` should target persistent storage (`/data/curate.db` in Fly).
+- Keep stale local dependency folders out of Docker context (`.dockerignore`) to prevent slow/failed deploy uploads.
+- If deployment fails in dependency install stage, verify native build prerequisites for `better-sqlite3` are installed in the Docker deps stage.
 
-To learn more about Next.js, take a look at the following resources:
+## Curation Freshness Strategy (Current)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Interest vector weighting favors newer user interactions.
+- Candidate selection is recent-first (7-day window) with older-content backfill when recent volume is low.
+- Final ranking applies a freshness multiplier so stale items are less likely to dominate.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Ingest Resilience (Current)
 
-## Deploy on Vercel
+- Source fetches are throttled by provider type.
+- Reddit and YouTube requests retry with backoff on rate-limit/transient failures.
+- BlueSky 400 responses are treated as empty source results.
+- RSS parsing includes fallback handling for malformed feeds and 404 feeds.
+- Ingest API response includes `errorSummary` with: `rateLimited`, `notFound`, `parse`, `other`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Where to Look Next
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `src/lib/curation/` for ranking, embeddings, and pipeline logic.
+- `src/lib/sources/` for source adapters and ingest behavior.
+- `src/app/api/` for ingest, curate, and content serving routes.
