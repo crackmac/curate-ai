@@ -7,6 +7,7 @@ interface CandidateForRanking {
   type: string;
   source: string;
   author: string | null;
+  publishedAt: string;
   similarityScore: number;
   crossSourceCount?: number;
 }
@@ -43,12 +44,13 @@ function buildPrompt(
   candidates: CandidateForRanking[],
   userTopics: string[],
   recentSaves: string[],
-  recentDislikes: string[]
+  recentDislikes: string[],
 ): string {
+  const now = Date.now();
   const candidateList = candidates
     .map(
       (c, i) =>
-        `${i + 1}. [ID:${c.id}] "${c.title}" (${c.type} from ${c.source}, similarity: ${c.similarityScore.toFixed(2)}${c.crossSourceCount && c.crossSourceCount > 1 ? `, appeared in ${c.crossSourceCount} sources` : ""})${c.summary ? `\n   ${c.summary.slice(0, 150)}` : ""}`
+        `${i + 1}. [ID:${c.id}] "${c.title}" (${c.type} from ${c.source}, similarity: ${c.similarityScore.toFixed(2)}, age: ${Math.max(0, Math.floor((now - new Date(c.publishedAt).getTime()) / (24 * 60 * 60 * 1000)))}d${c.crossSourceCount && c.crossSourceCount > 1 ? `, appeared in ${c.crossSourceCount} sources` : ""})${c.summary ? `\n   ${c.summary.slice(0, 150)}` : ""}`,
     )
     .join("\n");
 
@@ -73,6 +75,7 @@ Scoring guidelines:
 - High scores (70-100): directly matches user interests, high engagement, quality content
 - Medium scores (40-69): tangentially related, broadly interesting
 - Low scores (0-39): off-topic or low quality
+- Prefer fresher content when relevance is similar; older items should earn high scores only when especially strong
 - Penalize content similar to disliked items
 - Boost content similar to recent saves
 - Boost items that appeared in multiple sources — cross-source coverage signals importance`;
@@ -80,9 +83,12 @@ Scoring guidelines:
 
 function parseResponse(
   text: string,
-  candidates: CandidateForRanking[]
+  candidates: CandidateForRanking[],
 ): RankedItem[] {
-  const cleaned = text.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+  const cleaned = text
+    .replace(/```json?\n?/g, "")
+    .replace(/```/g, "")
+    .trim();
   try {
     const parsed = JSON.parse(cleaned) as RankedItem[];
     return parsed.map((item) => ({
@@ -94,7 +100,7 @@ function parseResponse(
       "[ranker] Failed to parse LLM response as JSON, falling back to trending:",
       err,
       "\nRaw response (first 500 chars):",
-      text.slice(0, 500)
+      text.slice(0, 500),
     );
     return candidates.map((c) => ({
       id: c.id,
@@ -107,7 +113,7 @@ function parseResponse(
 
 async function rankWithAnthropic(
   prompt: string,
-  candidates: CandidateForRanking[]
+  candidates: CandidateForRanking[],
 ): Promise<RankedItem[]> {
   const client = new Anthropic();
   const response = await client.messages.create({
@@ -123,7 +129,7 @@ async function rankWithAnthropic(
 
 async function rankWithOllama(
   prompt: string,
-  candidates: CandidateForRanking[]
+  candidates: CandidateForRanking[],
 ): Promise<RankedItem[]> {
   const ollamaUrl = process.env.OLLAMA_URL ?? "http://localhost:11434";
   const ollamaModel = process.env.OLLAMA_MODEL ?? "llama3.1:8b";
@@ -154,7 +160,7 @@ async function rankWithOllama(
       message_keys: data.message ? Object.keys(data.message) : null,
       content_length: data.message?.content?.length ?? 0,
       thinking_length: data.message?.thinking?.length ?? 0,
-    })
+    }),
   );
   return parseResponse(data.message?.content ?? "", candidates);
 }
@@ -163,9 +169,14 @@ export async function rankWithLLM(
   candidates: CandidateForRanking[],
   userTopics: string[],
   recentSaves: string[],
-  recentDislikes: string[]
+  recentDislikes: string[],
 ): Promise<RankedItem[]> {
-  const prompt = buildPrompt(candidates, userTopics, recentSaves, recentDislikes);
+  const prompt = buildPrompt(
+    candidates,
+    userTopics,
+    recentSaves,
+    recentDislikes,
+  );
 
   if (process.env.ANTHROPIC_API_KEY) {
     return rankWithAnthropic(prompt, candidates);

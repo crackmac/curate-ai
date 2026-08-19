@@ -6,7 +6,16 @@ import {
   userPreferences,
   sources,
 } from "@/lib/db/schema";
-import { eq, desc, and, isNull, isNotNull, inArray, gte } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  and,
+  isNull,
+  isNotNull,
+  inArray,
+  gte,
+  lt,
+} from "drizzle-orm";
 import {
   generateEmbedding,
   embeddingToBuffer,
@@ -16,6 +25,11 @@ import { rankBySimilarity, computeInterestVector } from "./similarity";
 import { rankWithLLM, type RankedItem } from "./ranker";
 
 const MAX_CANDIDATES = 100;
+const CANDIDATE_POOL_SIZE = 400;
+const RECENT_LOOKBACK_DAYS = 7;
+const FRESHNESS_HALF_LIFE_DAYS = 5;
+const FRESHNESS_FLOOR = 0.45;
+const FALLBACK_PUBLISHED_AT = "1970-01-01T00:00:00.000Z";
 
 export async function runCurationPipeline(userId: number, category?: string) {
   const today = new Date().toISOString().split("T")[0];
@@ -37,13 +51,18 @@ export async function runCurationPipeline(userId: number, category?: string) {
         and(
           eq(curatedItems.userId, userId),
           eq(curatedItems.digestDate, today),
-          inArray(curatedItems.contentItemId, categoryItemIds)
-        )
+          inArray(curatedItems.contentItemId, categoryItemIds),
+        ),
       )
       .run();
   } else {
     db.delete(curatedItems)
-      .where(and(eq(curatedItems.userId, userId), eq(curatedItems.digestDate, today)))
+      .where(
+        and(
+          eq(curatedItems.userId, userId),
+          eq(curatedItems.digestDate, today),
+        ),
+      )
       .run();
   }
 
@@ -56,8 +75,12 @@ export async function runCurationPipeline(userId: number, category?: string) {
   // 2. Build user interest vector from positive interactions
   const interestVector = await buildInterestVector(userId);
 
-  // 3. Get all content with embeddings
-  const candidates = db
+  // 3. Get recent content with embeddings, with older backfill when needed.
+  const recentCutoffIso = new Date(
+    Date.now() - RECENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const recentCandidates = db
     .select({
       id: contentItems.id,
       title: contentItems.title,
@@ -68,19 +91,66 @@ export async function runCurationPipeline(userId: number, category?: string) {
       sourceId: contentItems.sourceId,
       sourceName: sources.name,
       sourceType: sources.type,
+      publishedAt: contentItems.publishedAt,
     })
     .from(contentItems)
     .innerJoin(sources, eq(contentItems.sourceId, sources.id))
     .where(
       category
-        ? and(isNotNull(contentItems.embedding), eq(sources.category, category))
-        : isNotNull(contentItems.embedding)
+        ? and(
+            isNotNull(contentItems.embedding),
+            eq(sources.category, category),
+            gte(contentItems.publishedAt, recentCutoffIso),
+          )
+        : and(
+            isNotNull(contentItems.embedding),
+            gte(contentItems.publishedAt, recentCutoffIso),
+          ),
     )
     .orderBy(desc(contentItems.publishedAt))
-    .limit(400)
+    .limit(CANDIDATE_POOL_SIZE)
     .all();
 
-  console.log(`[curate] ${candidates.length} embedded candidates available`);
+  const olderSlots = CANDIDATE_POOL_SIZE - recentCandidates.length;
+  const olderBackfill =
+    olderSlots > 0
+      ? db
+          .select({
+            id: contentItems.id,
+            title: contentItems.title,
+            summary: contentItems.summary,
+            type: contentItems.type,
+            author: contentItems.author,
+            embedding: contentItems.embedding,
+            sourceId: contentItems.sourceId,
+            sourceName: sources.name,
+            sourceType: sources.type,
+            publishedAt: contentItems.publishedAt,
+          })
+          .from(contentItems)
+          .innerJoin(sources, eq(contentItems.sourceId, sources.id))
+          .where(
+            category
+              ? and(
+                  isNotNull(contentItems.embedding),
+                  eq(sources.category, category),
+                  lt(contentItems.publishedAt, recentCutoffIso),
+                )
+              : and(
+                  isNotNull(contentItems.embedding),
+                  lt(contentItems.publishedAt, recentCutoffIso),
+                ),
+          )
+          .orderBy(desc(contentItems.publishedAt))
+          .limit(olderSlots)
+          .all()
+      : [];
+
+  const candidates = [...recentCandidates, ...olderBackfill];
+
+  console.log(
+    `[curate] ${candidates.length} embedded candidates available (${recentCandidates.length} recent, ${olderBackfill.length} backfill)`,
+  );
   if (candidates.length === 0) return { curated: 0 };
 
   // 4. Stage 1 — embedding similarity filter
@@ -95,12 +165,10 @@ export async function runCurationPipeline(userId: number, category?: string) {
 
     const ranked = rankBySimilarity(
       withEmbeddings.map((c) => ({ id: c.id, embedding: c.embeddingVec })),
-      interestVector
+      interestVector,
     );
 
-    const topIds = new Set(
-      ranked.slice(0, MAX_CANDIDATES).map((r) => r.id)
-    );
+    const topIds = new Set(ranked.slice(0, MAX_CANDIDATES).map((r) => r.id));
     const similarityMap = new Map(ranked.map((r) => [r.id, r.similarity]));
 
     topCandidates = candidates
@@ -117,7 +185,10 @@ export async function runCurationPipeline(userId: number, category?: string) {
   }
 
   // 4b. Cross-source signal detection
-  const crossSourceMap = detectCrossSourceSignals(topCandidates.map((c) => c.id), category);
+  const crossSourceMap = detectCrossSourceSignals(
+    topCandidates.map((c) => c.id),
+    category,
+  );
 
   // 5. Stage 2 — Claude ranking
   const prefs = db
@@ -146,8 +217,8 @@ export async function runCurationPipeline(userId: number, category?: string) {
     .where(
       and(
         eq(interactions.userId, userId),
-        eq(interactions.type, "less_like_this")
-      )
+        eq(interactions.type, "less_like_this"),
+      ),
     )
     .orderBy(desc(interactions.createdAt))
     .limit(10)
@@ -157,7 +228,7 @@ export async function runCurationPipeline(userId: number, category?: string) {
   let rankedItems;
 
   console.log(
-    `[curate] Ranking ${topCandidates.length} candidates via ${process.env.ANTHROPIC_API_KEY ? "Anthropic" : "Ollama"}...`
+    `[curate] Ranking ${topCandidates.length} candidates via ${process.env.ANTHROPIC_API_KEY ? "Anthropic" : "Ollama"}...`,
   );
 
   try {
@@ -169,16 +240,22 @@ export async function runCurationPipeline(userId: number, category?: string) {
         type: c.type,
         source: c.sourceName,
         author: c.author,
+        publishedAt: normalizePublishedAt(c.publishedAt),
         similarityScore: c.similarityScore,
         crossSourceCount: crossSourceMap.get(c.id) ?? 1,
       })),
       userTopics,
       recentSaves,
-      recentDislikes
+      recentDislikes,
     );
-    console.log(`[curate] LLM ranking succeeded for ${rankedItems.length} items`);
+    console.log(
+      `[curate] LLM ranking succeeded for ${rankedItems.length} items`,
+    );
   } catch (err) {
-    console.error("[curate] LLM ranking failed, falling back to trending:", err);
+    console.error(
+      "[curate] LLM ranking failed, falling back to trending:",
+      err,
+    );
     rankedItems = topCandidates.map((c) => ({
       id: c.id,
       score: Math.round(c.similarityScore * 100),
@@ -190,7 +267,13 @@ export async function runCurationPipeline(userId: number, category?: string) {
   // 6. Stage 3 — diversity-aware digest assembly
   const scoreMap = new Map(rankedItems.map((r) => [r.id, r]));
   const sourceCount = new Map<string, number>();
-  const digest: { contentItemId: number; score: number; explanation: string; reason: string; position: number }[] = [];
+  const digest: {
+    contentItemId: number;
+    score: number;
+    explanation: string;
+    reason: string;
+    position: number;
+  }[] = [];
 
   const uniqueSources = new Set(topCandidates.map((c) => c.sourceType));
   const maxPerSource = Math.max(3, Math.ceil(digestSize / uniqueSources.size));
@@ -206,10 +289,12 @@ export async function runCurationPipeline(userId: number, category?: string) {
     .map((c) => {
       const ranked = scoreMap.get(c.id) ?? defaultRanked(c.id);
       const crossCount = crossSourceMap.get(c.id) ?? 1;
-      const boostedScore = Math.round(ranked.score * (1 + 0.15 * (crossCount - 1)));
-      return { ...c, ranked, boostedScore };
+      const boostedScore = ranked.score * (1 + 0.15 * (crossCount - 1));
+      const ageDays = daysSince(normalizePublishedAt(c.publishedAt));
+      const finalScore = Math.round(boostedScore * freshnessWeight(ageDays));
+      return { ...c, ranked, finalScore };
     })
-    .sort((a, b) => b.boostedScore - a.boostedScore);
+    .sort((a, b) => b.finalScore - a.finalScore);
 
   const usedIds = new Set<number>();
 
@@ -221,7 +306,7 @@ export async function runCurationPipeline(userId: number, category?: string) {
 
     digest.push({
       contentItemId: item.id,
-      score: item.boostedScore,
+      score: item.finalScore,
       explanation: item.ranked.explanation,
       reason: item.ranked.reason,
       position: digest.length,
@@ -238,7 +323,7 @@ export async function runCurationPipeline(userId: number, category?: string) {
 
     digest.push({
       contentItemId: item.id,
-      score: item.boostedScore,
+      score: item.finalScore,
       explanation: item.ranked.explanation,
       reason: item.ranked.reason,
       position: digest.length,
@@ -275,7 +360,9 @@ async function generateMissingEmbeddings(category?: string) {
         })
         .from(contentItems)
         .innerJoin(sources, eq(contentItems.sourceId, sources.id))
-        .where(and(isNull(contentItems.embedding), eq(sources.category, category)))
+        .where(
+          and(isNull(contentItems.embedding), eq(sources.category, category)),
+        )
         .limit(100)
         .all()
     : db
@@ -303,10 +390,10 @@ async function generateMissingEmbeddings(category?: string) {
           .set({ embedding: embeddingToBuffer(embedding) })
           .where(eq(contentItems.id, item.id))
           .run();
-      })
+      }),
     );
     console.log(
-      `[curate] Embedded batch ${i / BATCH_SIZE + 1}/${Math.ceil(items.length / BATCH_SIZE)} (${Math.min(i + BATCH_SIZE, items.length)}/${items.length}), rss=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`
+      `[curate] Embedded batch ${i / BATCH_SIZE + 1}/${Math.ceil(items.length / BATCH_SIZE)} (${Math.min(i + BATCH_SIZE, items.length)}/${items.length}), rss=${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
     );
   }
 
@@ -314,7 +401,11 @@ async function generateMissingEmbeddings(category?: string) {
 }
 
 function normalizeTitle(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function titlesMatchFuzzy(a: string, b: string): boolean {
@@ -329,7 +420,7 @@ function titlesMatchFuzzy(a: string, b: string): boolean {
 
 function detectCrossSourceSignals(
   candidateIds: number[],
-  category?: string
+  category?: string,
 ): Map<number, number> {
   const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const recentItems = db
@@ -342,8 +433,11 @@ function detectCrossSourceSignals(
     .innerJoin(sources, eq(contentItems.sourceId, sources.id))
     .where(
       category
-        ? and(gte(contentItems.publishedAt, cutoff), eq(sources.category, category))
-        : gte(contentItems.publishedAt, cutoff)
+        ? and(
+            gte(contentItems.publishedAt, cutoff),
+            eq(sources.category, category),
+          )
+        : gte(contentItems.publishedAt, cutoff),
     )
     .all();
 
@@ -355,7 +449,7 @@ function detectCrossSourceSignals(
     let matched = false;
     for (const group of groups) {
       const representative = normalizeTitle(
-        recentItems.find((r) => r.id === group.ids[0])!.title
+        recentItems.find((r) => r.id === group.ids[0])!.title,
       );
       if (titlesMatchFuzzy(norm, representative)) {
         group.ids.push(item.id);
@@ -381,7 +475,25 @@ function detectCrossSourceSignals(
   return result;
 }
 
-export async function buildInterestVector(userId: number): Promise<Float32Array> {
+function daysSince(isoTimestamp: string): number {
+  const then = new Date(isoTimestamp).getTime();
+  if (Number.isNaN(then)) return 0;
+  const days = (Date.now() - then) / (24 * 60 * 60 * 1000);
+  return Math.max(0, days);
+}
+
+function normalizePublishedAt(isoTimestamp: string | null): string {
+  return isoTimestamp ?? FALLBACK_PUBLISHED_AT;
+}
+
+function freshnessWeight(ageDays: number): number {
+  const decay = Math.pow(2, -ageDays / FRESHNESS_HALF_LIFE_DAYS);
+  return Math.max(FRESHNESS_FLOOR, decay);
+}
+
+export async function buildInterestVector(
+  userId: number,
+): Promise<Float32Array> {
   const positiveInteractions = db
     .select({ embedding: contentItems.embedding })
     .from(interactions)
@@ -390,8 +502,8 @@ export async function buildInterestVector(userId: number): Promise<Float32Array>
       and(
         eq(interactions.userId, userId),
         inArray(interactions.type, ["click", "save"]),
-        isNotNull(contentItems.embedding)
-      )
+        isNotNull(contentItems.embedding),
+      ),
     )
     .orderBy(desc(interactions.createdAt))
     .limit(50)
@@ -402,7 +514,7 @@ export async function buildInterestVector(userId: number): Promise<Float32Array>
   }
 
   const embeddings = positiveInteractions.map((r) =>
-    bufferToEmbedding(r.embedding as Buffer)
+    bufferToEmbedding(r.embedding as Buffer),
   );
 
   return computeInterestVector(embeddings);
