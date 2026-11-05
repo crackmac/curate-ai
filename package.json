@@ -40,5 +40,8 @@
   },
   "overrides": {
     "postcss": "^8.5.10"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
   }
 }
