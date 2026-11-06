@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { contentItems, curatedItems, sources } from "@/lib/db/schema";
-import { desc, eq, and, gte, lt } from "drizzle-orm";
+import {
+  contentItems,
+  curatedItems,
+  interactions,
+  sources,
+} from "@/lib/db/schema";
+import { desc, eq, and, gte, lt, inArray } from "drizzle-orm";
+import { STATE_TYPES } from "@/lib/db/feedback-history";
 import type { CuratedContentItem } from "@/types";
 
 const USER_ID = 1;
@@ -54,14 +60,18 @@ export async function GET(request: Request) {
       .all();
 
     if (curated.length > 0) {
-      const items: CuratedContentItem[] = curated.map((row) => ({
+      const items = curated.map((row) => ({
         ...row,
         type: row.type as CuratedContentItem["type"],
         reason: row.reason as CuratedContentItem["reason"],
         metadata: JSON.parse(row.metadata),
       }));
 
-      return NextResponse.json({ items, date: today, total: items.length });
+      return NextResponse.json({
+        items: withFeedbackState(items),
+        date: today,
+        total: items.length,
+      });
     }
 
     // Fallback: prefer recent rows first, with older backfill when needed.
@@ -160,7 +170,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const items: CuratedContentItem[] = mixed.map((row, index) => ({
+    const items = mixed.map((row, index) => ({
       ...row,
       type: row.type as CuratedContentItem["type"],
       metadata: JSON.parse(row.metadata),
@@ -171,11 +181,47 @@ export async function GET(request: Request) {
       digestDate: today,
     }));
 
-    return NextResponse.json({ items, date: today, total: items.length });
+    return NextResponse.json({
+      items: withFeedbackState(items),
+      date: today,
+      total: items.length,
+    });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "unknown error" },
       { status: 500 },
     );
   }
+}
+
+// Attaches each item's current Save / Less Like This state.
+function withFeedbackState(
+  items: Omit<CuratedContentItem, "saved" | "lessLikeThis">[],
+): CuratedContentItem[] {
+  const states =
+    items.length === 0
+      ? []
+      : db
+          .select({
+            contentItemId: interactions.contentItemId,
+            type: interactions.type,
+          })
+          .from(interactions)
+          .where(
+            and(
+              eq(interactions.userId, USER_ID),
+              inArray(interactions.type, STATE_TYPES),
+              inArray(
+                interactions.contentItemId,
+                items.map((i) => i.id),
+              ),
+            ),
+          )
+          .all();
+  const stateById = new Map(states.map((s) => [s.contentItemId, s.type]));
+  return items.map((item) => ({
+    ...item,
+    saved: stateById.get(item.id) === "save",
+    lessLikeThis: stateById.get(item.id) === "less_like_this",
+  }));
 }

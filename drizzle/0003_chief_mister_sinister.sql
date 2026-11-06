@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `interaction_state_unique` ON `interactions` (`user_id`,`content_item_id`) WHERE type IN ('save', 'less_like_this');

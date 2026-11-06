@@ -6,20 +6,29 @@ import { useState } from "react";
 
 interface FeedbackBarProps {
   contentItemId: number;
+  initialSaved: boolean;
+  initialLessLikeThis: boolean;
   onDismiss: () => void;
 }
 
-export function FeedbackBar({ contentItemId, onDismiss }: FeedbackBarProps) {
+export function FeedbackBar({
+  contentItemId,
+  initialSaved,
+  initialLessLikeThis,
+  onDismiss,
+}: FeedbackBarProps) {
   const { record } = useInteraction();
-  const [saved, setSaved] = useState(false);
-  const [disliked, setDisliked] = useState(false);
+  const [saved, setSaved] = useState(initialSaved);
+  const [disliked, setDisliked] = useState(initialLessLikeThis);
 
   return (
     <div className="flex items-center gap-1">
       <button
         onClick={() => {
+          // Mutually exclusive with Less Like This (the API enforces it too).
           setSaved(!saved);
-          record(contentItemId, "save");
+          if (!saved) setDisliked(false);
+          record(contentItemId, "save", !saved);
         }}
         className={`rounded-md p-1.5 transition-colors ${
           saved
@@ -33,7 +42,8 @@ export function FeedbackBar({ contentItemId, onDismiss }: FeedbackBarProps) {
       <button
         onClick={() => {
           setDisliked(!disliked);
-          record(contentItemId, "less_like_this");
+          if (!disliked) setSaved(false);
+          record(contentItemId, "less_like_this", !disliked);
         }}
         className={`rounded-md p-1.5 transition-colors ${
           disliked

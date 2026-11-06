@@ -22,6 +22,13 @@
       "when": 1786151008220,
       "tag": "0002_nervous_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793998300055,
+      "tag": "0003_chief_mister_sinister",
+      "breakpoints": true
     }
   ]
 }

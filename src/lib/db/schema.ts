@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { sqliteTable, text, integer, real, blob, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
@@ -112,14 +113,23 @@ export const curatedItems = sqliteTable(
   ]
 );
 
-export const interactions = sqliteTable("interactions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id),
-  contentItemId: integer("content_item_id")
-    .notNull()
-    .references(() => contentItems.id),
-  type: text("type").notNull(),
-  createdAt: text("created_at").notNull().default("(datetime('now'))"),
-});
+export const interactions = sqliteTable(
+  "interactions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    contentItemId: integer("content_item_id")
+      .notNull()
+      .references(() => contentItems.id),
+    type: text("type").notNull(),
+    createdAt: text("created_at").notNull().default("(datetime('now'))"),
+  },
+  (table) => [
+    // Save and Less Like This are mutually exclusive states: at most one per item.
+    uniqueIndex("interaction_state_unique")
+      .on(table.userId, table.contentItemId)
+      .where(sql`type IN ('save', 'less_like_this')`),
+  ]
+);

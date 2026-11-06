@@ -3,11 +3,15 @@
 import type { InteractionType } from "@/types";
 
 export function useInteraction() {
-  async function record(contentItemId: number, type: InteractionType) {
+  async function record(
+    contentItemId: number,
+    type: InteractionType,
+    active?: boolean,
+  ) {
     await fetch("/api/interact", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contentItemId, type }),
+      body: JSON.stringify({ contentItemId, type, active }),
     });
   }
 

@@ -157,6 +157,8 @@ export function ContentCard({ item }: ContentCardProps) {
         />
         <FeedbackBar
           contentItemId={item.id}
+          initialSaved={item.saved}
+          initialLessLikeThis={item.lessLikeThis}
           onDismiss={() => setDismissed(true)}
         />
       </div>
