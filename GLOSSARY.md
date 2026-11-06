@@ -86,11 +86,11 @@ The one person the Digest is curated for.
 _Avoid_: Account, reader
 
 **Interest Profile**:
-A picture of what the User cares about, built from their Positive Signals with recent ones weighted more heavily.
+A picture of what the User cares about, seeded by their Topics and built up from their Positive Signals. The User's most recent actions weigh most, regardless of how much time has passed; Topics fade as Positive Signals accumulate.
 _Avoid_: Interest vector, user model, taste
 
 **Cold Start**:
-The state before the User has any Positive Signals, when there is no Interest Profile to rank against.
+The state before the User has any Positive Signals, when the Interest Profile rests on Topics alone.
 _Avoid_: New user, empty profile
 
 **Topic**:
@@ -102,17 +102,25 @@ How closely a Topic matches the User's demonstrated interests, from 0 to 100.
 _Avoid_: Topic affinity, topic weight
 
 **Interaction**:
-One action a User takes on a Content Item: Click, Save, Dismiss or Less Like This.
+Anything a User does to a Content Item: a Click or Dismiss (one-off acts), or turning a Save or Less Like This on or off (undoable states). An item the User has interacted with in any way never appears in a later Digest.
 _Avoid_: Event, feedback, "type"
 
 **Positive Signal**:
-A Click or a Save. Both count as evidence of interest; a Save is the stronger intent ("keep this"), a Click only means "opened it".
+A Click or a Save, taken as evidence of interest. A Save ("keep this") counts much more than a Click ("opened it"). Each Content Item contributes at most one Positive Signal, its strongest: a Save supersedes a Click, and Less Like This cancels a Click. Saves and Clicks are remembered separately, so a run of Clicks never pushes out Saves.
 _Avoid_: Engagement, like
 
+**Save**:
+An undoable state marking a Content Item as worth keeping; the strongest Positive Signal. Turning it off withdraws the signal.
+_Avoid_: Bookmark, favorite, like
+
+**Saved List**:
+Every Content Item the User currently has Saved, newest first; the one place a Saved item can be found again after its Digest Date.
+_Avoid_: Bookmarks, reading list, favorites
+
 **Dismiss**:
-Hiding a Curated Item with no opinion about it. Has no effect on future ranking.
+A one-off act hiding a Curated Item for good, with no opinion about it. Has no effect on ranking.
 _Avoid_: Dislike, reject
 
 **Less Like This**:
-An explicit negative signal: the User wants fewer items like this one.
+An undoable state saying the User wants fewer items like this one. While on, it hides the item and demotes close lookalikes. Turning it off withdraws the signal.
 _Avoid_: Dismiss, dislike, thumbs-down
