@@ -36,7 +36,7 @@ Sources → Ingest API → content_items table → Curation Pipeline → curated
 
 **Serving** (`GET /api/content`, optional `?category=`): Returns today's curated digest, ordered by `position` when scoped to one category or by `score` descending for the "all" view (per-category curate runs can produce overlapping `position` values across categories). Falls back to round-robin recent content if no curation exists yet. `GET/POST/PATCH/DELETE /api/categories` is full CRUD over the `categories` table (see Categories below); `GET/POST /api/preferences/topic-scores` reads/updates per-topic affinity scores.
 
-**Feedback** (`POST /api/interact`): Records a `click` / `save` / `dismiss` / `less_like_this` interaction against a content item. Saves and dismissals feed back into the interest vector and the LLM prompt's "recently saved / disliked" hints on the next curation run.
+**Feedback** (`POST /api/interact`): Records a `click` / `save` / `dismiss` / `less_like_this` interaction against a content item. Clicks and saves feed the interest vector; saves and `less_like_this` feed the LLM prompt's "recently saved / disliked" hints on the next curation run. `dismiss` only hides the card and has no ranking effect.
 
 ### Categories
 
@@ -94,3 +94,17 @@ Note: `runMigrations()` (`src/lib/db/migrate.ts`) applies the Drizzle migrations
 | `INTERNAL_URL` | No (default `http://localhost:3000`) | Base URL for scheduler self-calls |
 | `YOUTUBE_API_KEY` | For YouTube source | YouTube Data API access |
 | `REDDIT_USER_AGENT` | No | User-Agent header for Reddit `.rss` requests |
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for `crackmac/curate-ai` (via `gh`). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
