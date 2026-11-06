@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   RefreshCw,
   Settings,
+  Bookmark,
   Sparkles,
   ChevronDown,
   ChevronRight,
@@ -129,6 +130,14 @@ export function DigestHeader({
             />
             {curating ? "Curating..." : "Curate"}
           </button>
+          <Link
+            href="/saved"
+            aria-label="Saved"
+            title="Saved"
+            className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          >
+            <Bookmark className="h-4 w-4" />
+          </Link>
           <Link
             href="/settings"
             className="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-2 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"

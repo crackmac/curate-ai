@@ -8,6 +8,7 @@ interface FeedbackBarProps {
   contentItemId: number;
   initialSaved: boolean;
   initialLessLikeThis: boolean;
+  onSaveChange?: (saved: boolean) => void;
   onDismiss: () => void;
 }
 
@@ -15,6 +16,7 @@ export function FeedbackBar({
   contentItemId,
   initialSaved,
   initialLessLikeThis,
+  onSaveChange,
   onDismiss,
 }: FeedbackBarProps) {
   const { record } = useInteraction();
@@ -29,6 +31,7 @@ export function FeedbackBar({
           setSaved(!saved);
           if (!saved) setDisliked(false);
           record(contentItemId, "save", !saved);
+          onSaveChange?.(!saved);
         }}
         className={`rounded-md p-1.5 transition-colors ${
           saved
@@ -42,7 +45,10 @@ export function FeedbackBar({
       <button
         onClick={() => {
           setDisliked(!disliked);
-          if (!disliked) setSaved(false);
+          if (!disliked && saved) {
+            setSaved(false);
+            onSaveChange?.(false);
+          }
           record(contentItemId, "less_like_this", !disliked);
         }}
         className={`rounded-md p-1.5 transition-colors ${

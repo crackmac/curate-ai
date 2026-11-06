@@ -16,9 +16,10 @@ import type { CuratedContentItem } from "@/types";
 
 interface ContentCardProps {
   item: CuratedContentItem;
+  onSaveChange?: (saved: boolean) => void;
 }
 
-export function ContentCard({ item }: ContentCardProps) {
+export function ContentCard({ item, onSaveChange }: ContentCardProps) {
   const [dismissed, setDismissed] = useState(false);
   const { record } = useInteraction();
   const metadata = item.metadata as Record<string, number | string>;
@@ -150,15 +151,20 @@ export function ContentCard({ item }: ContentCardProps) {
       </div>
 
       <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2">
-        <ExplanationBadge
-          explanation={item.explanation}
-          score={item.score}
-          reason={item.reason}
-        />
+        {item.explanation ? (
+          <ExplanationBadge
+            explanation={item.explanation}
+            score={item.score}
+            reason={item.reason}
+          />
+        ) : (
+          <span />
+        )}
         <FeedbackBar
           contentItemId={item.id}
           initialSaved={item.saved}
           initialLessLikeThis={item.lessLikeThis}
+          onSaveChange={onSaveChange}
           onDismiss={() => setDismissed(true)}
         />
       </div>
