@@ -9,7 +9,8 @@ interface FeedbackBarProps {
   initialSaved: boolean;
   initialLessLikeThis: boolean;
   onSaveChange?: (saved: boolean) => void;
-  onDismiss: () => void;
+  // Called when Dismiss or Less Like This hides the card.
+  onHide: (kind: "dismiss" | "less_like_this") => void;
 }
 
 export function FeedbackBar({
@@ -17,7 +18,7 @@ export function FeedbackBar({
   initialSaved,
   initialLessLikeThis,
   onSaveChange,
-  onDismiss,
+  onHide,
 }: FeedbackBarProps) {
   const { record } = useInteraction();
   const [saved, setSaved] = useState(initialSaved);
@@ -44,12 +45,11 @@ export function FeedbackBar({
       </button>
       <button
         onClick={() => {
+          // Turning it on also clears a Save (mutually exclusive) and hides the card.
           setDisliked(!disliked);
-          if (!disliked && saved) {
-            setSaved(false);
-            onSaveChange?.(false);
-          }
+          if (!disliked) setSaved(false);
           record(contentItemId, "less_like_this", !disliked);
+          if (!disliked) onHide("less_like_this");
         }}
         className={`rounded-md p-1.5 transition-colors ${
           disliked
@@ -63,7 +63,7 @@ export function FeedbackBar({
       <button
         onClick={() => {
           record(contentItemId, "dismiss");
-          onDismiss();
+          onHide("dismiss");
         }}
         className="rounded-md p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         title="Hide"

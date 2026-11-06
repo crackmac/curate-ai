@@ -26,6 +26,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Undo of a Dismiss: withdraw it so the item is no longer hidden.
+    if (type === "dismiss" && active === false) {
+      db.delete(interactions)
+        .where(
+          and(
+            eq(interactions.userId, USER_ID),
+            eq(interactions.contentItemId, contentItemId),
+            eq(interactions.type, "dismiss")
+          )
+        )
+        .run();
+      return NextResponse.json({ success: true });
+    }
+
     if (!STATE_TYPES.includes(type)) {
       db.insert(interactions)
         .values({ userId: USER_ID, contentItemId, type })

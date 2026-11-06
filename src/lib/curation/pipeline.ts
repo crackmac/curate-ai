@@ -13,6 +13,7 @@ import {
   isNull,
   isNotNull,
   inArray,
+  notInArray,
   gte,
   lt,
 } from "drizzle-orm";
@@ -23,6 +24,7 @@ import {
 } from "./embeddings";
 import { rankBySimilarity, weightedInterestVector } from "./similarity";
 import { positiveSignalWeights } from "./signals";
+import { excludedFromCuration } from "./exclusion";
 import { rankWithLLM, type RankedItem } from "./ranker";
 
 const MAX_CANDIDATES = 100;
@@ -34,6 +36,41 @@ const FALLBACK_PUBLISHED_AT = "1970-01-01T00:00:00.000Z";
 
 export async function runCurationPipeline(userId: number, category?: string) {
   const today = new Date().toISOString().split("T")[0];
+
+  // Items the User has interacted with never appear in a later Digest. Read
+  // today's Digest before its slice is cleared, for the same-day exception.
+  const todaysDigestIds = new Set(
+    db
+      .select({ id: curatedItems.contentItemId })
+      .from(curatedItems)
+      .where(
+        and(
+          eq(curatedItems.userId, userId),
+          eq(curatedItems.digestDate, today),
+        ),
+      )
+      .all()
+      .map((r) => r.id),
+  );
+  const excludedIds = [
+    ...excludedFromCuration(
+      db
+        .select({
+          contentItemId: interactions.contentItemId,
+          type: interactions.type,
+        })
+        .from(interactions)
+        .where(eq(interactions.userId, userId))
+        .all(),
+      todaysDigestIds,
+    ),
+  ];
+  // shortcut: passes every excluded id as a bound parameter; fine at
+  // single-user scale, switch to a subquery past ~30k interacted items.
+  const notExcluded =
+    excludedIds.length > 0
+      ? notInArray(contentItems.id, excludedIds)
+      : undefined;
 
   // Clear any existing curation for today so we can re-curate. When scoped to
   // a category, only clear that category's slice so other categories'
@@ -100,11 +137,13 @@ export async function runCurationPipeline(userId: number, category?: string) {
       category
         ? and(
             isNotNull(contentItems.embedding),
+            notExcluded,
             eq(sources.category, category),
             gte(contentItems.publishedAt, recentCutoffIso),
           )
         : and(
             isNotNull(contentItems.embedding),
+            notExcluded,
             gte(contentItems.publishedAt, recentCutoffIso),
           ),
     )
@@ -134,11 +173,13 @@ export async function runCurationPipeline(userId: number, category?: string) {
             category
               ? and(
                   isNotNull(contentItems.embedding),
+                  notExcluded,
                   eq(sources.category, category),
                   lt(contentItems.publishedAt, recentCutoffIso),
                 )
               : and(
                   isNotNull(contentItems.embedding),
+                  notExcluded,
                   lt(contentItems.publishedAt, recentCutoffIso),
                 ),
           )

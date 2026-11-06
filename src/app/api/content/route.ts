@@ -8,6 +8,7 @@ import {
 } from "@/lib/db/schema";
 import { desc, eq, and, gte, lt, inArray } from "drizzle-orm";
 import { STATE_TYPES } from "@/lib/db/feedback-history";
+import { hiddenFromDigest } from "@/lib/curation/exclusion";
 import type { CuratedContentItem } from "@/types";
 
 const USER_ID = 1;
@@ -67,10 +68,11 @@ export async function GET(request: Request) {
         metadata: JSON.parse(row.metadata),
       }));
 
+      const visible = withFeedbackState(items);
       return NextResponse.json({
-        items: withFeedbackState(items),
+        items: visible,
         date: today,
-        total: items.length,
+        total: visible.length,
       });
     }
 
@@ -181,10 +183,11 @@ export async function GET(request: Request) {
       digestDate: today,
     }));
 
+    const visible = withFeedbackState(items);
     return NextResponse.json({
-      items: withFeedbackState(items),
+      items: visible,
       date: today,
-      total: items.length,
+      total: visible.length,
     });
   } catch (err) {
     return NextResponse.json(
@@ -194,7 +197,8 @@ export async function GET(request: Request) {
   }
 }
 
-// Attaches each item's current Save / Less Like This state.
+// Drops items hidden from the Digest (Dismissed, or Less Like This) and
+// attaches each remaining item's current Save state.
 function withFeedbackState(
   items: Omit<CuratedContentItem, "saved" | "lessLikeThis">[],
 ): CuratedContentItem[] {
@@ -210,7 +214,7 @@ function withFeedbackState(
           .where(
             and(
               eq(interactions.userId, USER_ID),
-              inArray(interactions.type, STATE_TYPES),
+              inArray(interactions.type, [...STATE_TYPES, "dismiss"]),
               inArray(
                 interactions.contentItemId,
                 items.map((i) => i.id),
@@ -218,10 +222,15 @@ function withFeedbackState(
             ),
           )
           .all();
-  const stateById = new Map(states.map((s) => [s.contentItemId, s.type]));
-  return items.map((item) => ({
-    ...item,
-    saved: stateById.get(item.id) === "save",
-    lessLikeThis: stateById.get(item.id) === "less_like_this",
-  }));
+  const hidden = hiddenFromDigest(states);
+  const savedIds = new Set(
+    states.filter((s) => s.type === "save").map((s) => s.contentItemId),
+  );
+  return items
+    .filter((item) => !hidden.has(item.id))
+    .map((item) => ({
+      ...item,
+      saved: savedIds.has(item.id),
+      lessLikeThis: false,
+    }));
 }

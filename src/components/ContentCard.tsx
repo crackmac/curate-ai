@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ExternalLink,
   MessageSquare,
@@ -19,12 +19,68 @@ interface ContentCardProps {
   onSaveChange?: (saved: boolean) => void;
 }
 
+const UNDO_WINDOW_MS = 5000;
+
+type Hidden = { kind: "dismiss" | "less_like_this"; wasSaved: boolean };
+
 export function ContentCard({ item, onSaveChange }: ContentCardProps) {
-  const [dismissed, setDismissed] = useState(false);
+  const [hidden, setHidden] = useState<Hidden | null>(null);
+  const [gone, setGone] = useState(false);
+  const [saved, setSaved] = useState(item.saved);
   const { record } = useInteraction();
   const metadata = item.metadata as Record<string, number | string>;
+  // A ref, so a parent re-render passing a new callback doesn't restart the Undo timer.
+  const onSaveChangeRef = useRef(onSaveChange);
+  useEffect(() => {
+    onSaveChangeRef.current = onSaveChange;
+  });
 
-  if (dismissed) return null;
+  // After the Undo window the hide is final.
+  useEffect(() => {
+    if (!hidden) return;
+    const timer = setTimeout(() => {
+      setGone(true);
+      if (hidden.kind === "less_like_this" && hidden.wasSaved) {
+        setSaved(false);
+        onSaveChangeRef.current?.(false);
+      }
+    }, UNDO_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [hidden]);
+
+  const handleSaveChange = (next: boolean) => {
+    setSaved(next);
+    onSaveChange?.(next);
+  };
+
+  // Undo withdraws the Interaction; a Less Like This that cleared a Save
+  // restores the Save (which also clears Less Like This).
+  const undo = () => {
+    if (!hidden) return;
+    if (hidden.kind === "dismiss") record(item.id, "dismiss", false);
+    else if (hidden.wasSaved) record(item.id, "save", true);
+    else record(item.id, "less_like_this", false);
+    setHidden(null);
+  };
+
+  if (gone) return null;
+
+  if (hidden) {
+    return (
+      <div
+        role="status"
+        className="flex items-center justify-between rounded-xl border border-dashed border-gray-200 dark:border-gray-800 px-4 py-3 text-sm text-gray-500 dark:text-gray-400"
+      >
+        <span>Hidden</span>
+        <button
+          onClick={undo}
+          className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          Undo
+        </button>
+      </div>
+    );
+  }
 
   const timeAgo = item.publishedAt
     ? formatTimeAgo(new Date(item.publishedAt))
@@ -162,10 +218,10 @@ export function ContentCard({ item, onSaveChange }: ContentCardProps) {
         )}
         <FeedbackBar
           contentItemId={item.id}
-          initialSaved={item.saved}
-          initialLessLikeThis={item.lessLikeThis}
-          onSaveChange={onSaveChange}
-          onDismiss={() => setDismissed(true)}
+          initialSaved={saved}
+          initialLessLikeThis={false}
+          onSaveChange={handleSaveChange}
+          onHide={(kind) => setHidden({ kind, wasSaved: saved })}
         />
       </div>
     </article>
