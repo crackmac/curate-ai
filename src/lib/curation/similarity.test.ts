@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   cosineSimilarity,
-  computeInterestVector,
+  weightedInterestVector,
   rankBySimilarity,
 } from "./similarity";
 
@@ -30,29 +30,30 @@ describe("cosineSimilarity", () => {
   });
 });
 
-describe("computeInterestVector", () => {
-  it("returns a 384-dim zero vector when there are no embeddings", () => {
-    const v = computeInterestVector([]);
+describe("weightedInterestVector", () => {
+  it("returns a 384-dim zero vector when there are no signals", () => {
+    const v = weightedInterestVector([]);
     expect(v.length).toBe(384);
     expect([...v].every((x) => x === 0)).toBe(true);
   });
 
   it("produces an L2-normalized vector", () => {
-    const v = computeInterestVector([
-      new Float32Array([3, 4]),
-      new Float32Array([1, 0]),
+    const v = weightedInterestVector([
+      { embedding: new Float32Array([3, 4]), weight: 1 },
+      { embedding: new Float32Array([1, 0]), weight: 0.5 },
     ]);
     const norm = Math.sqrt([...v].reduce((s, x) => s + x * x, 0));
     expect(norm).toBeCloseTo(1, 5);
   });
 
-  it("weights newer interactions higher when decay is applied", () => {
-    const newest = new Float32Array([1, 0]);
-    const older = new Float32Array([0, 1]);
-
-    const v = computeInterestVector([newest, older], 0.5);
-
-    expect(v[0]).toBeGreaterThan(v[1]);
+  it("pulls the profile toward the more heavily weighted signal", () => {
+    const v = weightedInterestVector([
+      { embedding: new Float32Array([1, 0]), weight: 1 },
+      { embedding: new Float32Array([0, 1]), weight: 1 / 3 },
+    ]);
+    // Weighted mean (0.75, 0.25), normalized: (0.9487, 0.3162).
+    expect(v[0]).toBeCloseTo(0.9487, 3);
+    expect(v[1]).toBeCloseTo(0.3162, 3);
   });
 });
 

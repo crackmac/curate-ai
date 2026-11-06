@@ -25,30 +25,25 @@ export function rankBySimilarity(
     .sort((a, b) => b.similarity - a.similarity);
 }
 
-export function computeInterestVector(
-  embeddings: Float32Array[],
-  decayFactor = 0.9,
+// Weighted mean of the signals' embeddings, L2-normalized.
+export function weightedInterestVector(
+  signals: { embedding: Float32Array; weight: number }[],
 ): Float32Array {
-  if (embeddings.length === 0) return new Float32Array(384);
+  if (signals.length === 0) return new Float32Array(384);
 
-  const dim = embeddings[0].length;
+  const dim = signals[0].embedding.length;
   const result = new Float32Array(dim);
-
-  let weight = 1;
   let totalWeight = 0;
 
-  // Embeddings are passed in newest-first order, so apply the highest weight
-  // to index 0 and decay as interactions get older.
-  for (let i = 0; i < embeddings.length; i++) {
+  for (const { embedding, weight } of signals) {
     for (let d = 0; d < dim; d++) {
-      result[d] += embeddings[i][d] * weight;
+      result[d] += embedding[d] * weight;
     }
     totalWeight += weight;
-    weight *= decayFactor;
   }
 
-  for (let d = 0; d < dim; d++) {
-    result[d] /= totalWeight;
+  if (totalWeight > 0) {
+    for (let d = 0; d < dim; d++) result[d] /= totalWeight;
   }
 
   // L2 normalize

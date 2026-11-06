@@ -21,7 +21,8 @@ import {
   embeddingToBuffer,
   bufferToEmbedding,
 } from "./embeddings";
-import { rankBySimilarity, computeInterestVector } from "./similarity";
+import { rankBySimilarity, weightedInterestVector } from "./similarity";
+import { positiveSignalWeights } from "./signals";
 import { rankWithLLM, type RankedItem } from "./ranker";
 
 const MAX_CANDIDATES = 100;
@@ -494,28 +495,33 @@ function freshnessWeight(ageDays: number): number {
 export async function buildInterestVector(
   userId: number,
 ): Promise<Float32Array> {
-  const positiveInteractions = db
-    .select({ embedding: contentItems.embedding })
+  // shortcut: reads all of the User's signal Interactions, fine at single-user
+  // scale; add a limit if the Click history ever grows into the tens of thousands.
+  const rows = db
+    .select({
+      contentItemId: interactions.contentItemId,
+      type: interactions.type,
+      embedding: contentItems.embedding,
+    })
     .from(interactions)
     .innerJoin(contentItems, eq(interactions.contentItemId, contentItems.id))
     .where(
       and(
         eq(interactions.userId, userId),
-        inArray(interactions.type, ["click", "save"]),
+        inArray(interactions.type, ["click", "save", "less_like_this"]),
         isNotNull(contentItems.embedding),
       ),
     )
     .orderBy(desc(interactions.id)) // newest first; created_at is a literal default, not a time
-    .limit(50)
     .all();
 
-  if (positiveInteractions.length === 0) {
-    return new Float32Array(384);
-  }
-
-  const embeddings = positiveInteractions.map((r) =>
-    bufferToEmbedding(r.embedding as Buffer),
+  const embeddingById = new Map(
+    rows.map((r) => [r.contentItemId, r.embedding as Buffer]),
   );
+  const signals = [...positiveSignalWeights(rows)].map(([id, weight]) => ({
+    embedding: bufferToEmbedding(embeddingById.get(id)!),
+    weight,
+  }));
 
-  return computeInterestVector(embeddings);
+  return weightedInterestVector(signals);
 }
