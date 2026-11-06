@@ -205,7 +205,7 @@ export async function runCurationPipeline(userId: number, category?: string) {
     .from(interactions)
     .innerJoin(contentItems, eq(interactions.contentItemId, contentItems.id))
     .where(and(eq(interactions.userId, userId), eq(interactions.type, "save")))
-    .orderBy(desc(interactions.createdAt))
+    .orderBy(desc(interactions.id)) // newest first; created_at is a literal default, not a time
     .limit(10)
     .all()
     .map((r) => r.title);
@@ -220,7 +220,7 @@ export async function runCurationPipeline(userId: number, category?: string) {
         eq(interactions.type, "less_like_this"),
       ),
     )
-    .orderBy(desc(interactions.createdAt))
+    .orderBy(desc(interactions.id)) // newest first; created_at is a literal default, not a time
     .limit(10)
     .all()
     .map((r) => r.title);
@@ -505,7 +505,7 @@ export async function buildInterestVector(
         isNotNull(contentItems.embedding),
       ),
     )
-    .orderBy(desc(interactions.createdAt))
+    .orderBy(desc(interactions.id)) // newest first; created_at is a literal default, not a time
     .limit(50)
     .all();
 
