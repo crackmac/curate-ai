@@ -2,9 +2,9 @@ import type { SourceAdapter, RawContentItem, SourceConfig } from "./types";
 
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 
-interface YouTubeSearchItem {
-  id: { videoId: string };
+interface YouTubePlaylistItem {
   snippet: {
+    resourceId: { videoId: string };
     title: string;
     description: string;
     channelTitle: string;
@@ -78,27 +78,29 @@ export const youtubeAdapter: SourceAdapter = {
     const channelId = await resolveChannelId(rawChannelId, apiKey);
     if (!channelId) throw new Error(`Could not resolve channel: ${rawChannelId}`);
 
-    const searchRes = await fetch(
-      `${YOUTUBE_API}/search?` +
+    // The channel's uploads playlist (UC… → UU…), newest first. Costs 1 quota
+    // unit vs search's 100, which exhausted the 10k/day quota across channels.
+    const uploadsRes = await fetch(
+      `${YOUTUBE_API}/playlistItems?` +
         new URLSearchParams({
           key: apiKey,
-          channelId,
+          playlistId: uploadsPlaylistId(channelId),
           part: "snippet",
-          order: "date",
           maxResults: "10",
-          type: "video",
         })
     );
 
-    if (!searchRes.ok)
-      throw new Error(`YouTube search error: ${searchRes.status}`);
+    if (!uploadsRes.ok)
+      throw new Error(`YouTube uploads error: ${uploadsRes.status}`);
 
-    const searchData = await searchRes.json();
-    const searchItems: YouTubeSearchItem[] = searchData.items || [];
+    const uploadsData = await uploadsRes.json();
+    const searchItems: YouTubePlaylistItem[] = uploadsData.items || [];
 
     if (searchItems.length === 0) return [];
 
-    const videoIds = searchItems.map((item) => item.id.videoId).join(",");
+    const videoIds = searchItems
+      .map((item) => item.snippet.resourceId.videoId)
+      .join(",");
     const detailsRes = await fetch(
       `${YOUTUBE_API}/videos?` +
         new URLSearchParams({
@@ -117,7 +119,7 @@ export const youtubeAdapter: SourceAdapter = {
     const items: RawContentItem[] = [];
 
     for (const item of searchItems) {
-      const videoId = item.id.videoId;
+      const videoId = item.snippet.resourceId.videoId;
       const details = detailsMap.get(videoId);
       const duration = details?.contentDetails?.duration || "";
       const isShort = isShortVideo(duration);
@@ -146,6 +148,10 @@ export const youtubeAdapter: SourceAdapter = {
     return items;
   },
 };
+
+function uploadsPlaylistId(channelId: string): string {
+  return "UU" + channelId.slice(2);
+}
 
 function isShortVideo(isoDuration: string): boolean {
   const match = isoDuration.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);

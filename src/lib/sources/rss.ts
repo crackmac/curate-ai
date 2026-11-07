@@ -1,12 +1,8 @@
 import Parser from "rss-parser";
 import type { SourceAdapter, RawContentItem, SourceConfig } from "./types";
 
-const parser = new Parser({
-  timeout: 20000,
-  headers: {
-    "User-Agent": "CurateAI/1.0",
-  },
-});
+const parser = new Parser();
+const FETCH_TIMEOUT_MS = 20000;
 
 export const rssAdapter: SourceAdapter = {
   id: "rss",
@@ -15,7 +11,20 @@ export const rssAdapter: SourceAdapter = {
     const feedUrl = config.feedUrl;
     if (!feedUrl) return [];
 
-    const feed = await parser.parseURL(feedUrl);
+    // fetch, not parser.parseURL: some CDNs (DeepMind's) send gzip unasked,
+    // which parseURL's raw http client can't decode.
+    const res = await fetch(feedUrl, {
+      headers: {
+        "User-Agent": "CurateAI/1.0",
+        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`Status code ${res.status}`);
+    const body = await res.text();
+    // ESPN's bot protection answers datacenter IPs with an empty 202.
+    if (!body.trim()) throw new Error(`Empty feed response (status ${res.status})`);
+    const feed = await parser.parseString(body);
     const items: RawContentItem[] = [];
 
     for (const entry of feed.items.slice(0, 25)) {
