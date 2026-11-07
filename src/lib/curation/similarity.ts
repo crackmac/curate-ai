@@ -25,6 +25,24 @@ export function rankBySimilarity(
     .sort((a, b) => b.similarity - a.similarity);
 }
 
+// MiniLM cosine above which a candidate counts as a lookalike of a disliked
+// item (same story or near-duplicate); related-topic items sit around 0.3–0.55.
+export const LOOKALIKE_THRESHOLD = 0.6;
+
+// Moves candidates that look like any Less Like This item below all the
+// others, keeping each group's existing order.
+export function demoteLookalikes<T extends { embedding: Float32Array }>(
+  ordered: T[],
+  disliked: Float32Array[],
+): T[] {
+  const isLookalike = (c: T) =>
+    disliked.some((d) => cosineSimilarity(c.embedding, d) > LOOKALIKE_THRESHOLD);
+  return [
+    ...ordered.filter((c) => !isLookalike(c)),
+    ...ordered.filter(isLookalike),
+  ];
+}
+
 // Weighted mean of the signals' embeddings, L2-normalized.
 export function weightedInterestVector(
   signals: { embedding: Float32Array; weight: number }[],

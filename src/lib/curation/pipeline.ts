@@ -22,7 +22,11 @@ import {
   embeddingToBuffer,
   bufferToEmbedding,
 } from "./embeddings";
-import { rankBySimilarity, weightedInterestVector } from "./similarity";
+import {
+  demoteLookalikes,
+  rankBySimilarity,
+  weightedInterestVector,
+} from "./similarity";
 import { positiveSignalWeights } from "./signals";
 import { excludedFromCuration } from "./exclusion";
 import { rankWithLLM, type RankedItem } from "./ranker";
@@ -196,35 +200,30 @@ export async function runCurationPipeline(userId: number, category?: string) {
   if (candidates.length === 0) return { curated: 0 };
 
   // 4. Stage 1 — embedding similarity filter
-  let topCandidates;
   const hasInterest = interestVector.some((v) => v !== 0);
+  const vectors = candidates.map((c) => ({
+    id: c.id,
+    embedding: bufferToEmbedding(c.embedding as Buffer),
+  }));
+  const ranked = hasInterest ? rankBySimilarity(vectors, interestVector) : [];
+  const similarityMap = new Map(ranked.map((r) => [r.id, r.similarity]));
+  const vectorById = new Map(vectors.map((v) => [v.id, v]));
+  // With no interest signal, recency order stands in for similarity.
+  const ordered = hasInterest ? ranked.map((r) => vectorById.get(r.id)!) : vectors;
 
-  if (hasInterest) {
-    const withEmbeddings = candidates.map((c) => ({
+  // Lookalikes of Less Like This items sink below the rest before the cut.
+  const topIds = new Set(
+    demoteLookalikes(ordered, dislikedEmbeddings(userId))
+      .slice(0, MAX_CANDIDATES)
+      .map((v) => v.id),
+  );
+
+  const topCandidates = candidates
+    .filter((c) => topIds.has(c.id))
+    .map((c) => ({
       ...c,
-      embeddingVec: bufferToEmbedding(c.embedding as Buffer),
+      similarityScore: hasInterest ? (similarityMap.get(c.id) ?? 0) : 0.5,
     }));
-
-    const ranked = rankBySimilarity(
-      withEmbeddings.map((c) => ({ id: c.id, embedding: c.embeddingVec })),
-      interestVector,
-    );
-
-    const topIds = new Set(ranked.slice(0, MAX_CANDIDATES).map((r) => r.id));
-    const similarityMap = new Map(ranked.map((r) => [r.id, r.similarity]));
-
-    topCandidates = candidates
-      .filter((c) => topIds.has(c.id))
-      .map((c) => ({
-        ...c,
-        similarityScore: similarityMap.get(c.id) ?? 0,
-      }));
-  } else {
-    topCandidates = candidates.slice(0, MAX_CANDIDATES).map((c) => ({
-      ...c,
-      similarityScore: 0.5,
-    }));
-  }
 
   // 4b. Cross-source signal detection
   const crossSourceMap = detectCrossSourceSignals(
@@ -531,6 +530,24 @@ function normalizePublishedAt(isoTimestamp: string | null): string {
 function freshnessWeight(ageDays: number): number {
   const decay = Math.pow(2, -ageDays / FRESHNESS_HALF_LIFE_DAYS);
   return Math.max(FRESHNESS_FLOOR, decay);
+}
+
+// Embeddings of the items currently marked Less Like This; withdrawing one
+// deletes its row, so its demotion ends on the next Curation Run.
+function dislikedEmbeddings(userId: number): Float32Array[] {
+  return db
+    .select({ embedding: contentItems.embedding })
+    .from(interactions)
+    .innerJoin(contentItems, eq(interactions.contentItemId, contentItems.id))
+    .where(
+      and(
+        eq(interactions.userId, userId),
+        eq(interactions.type, "less_like_this"),
+        isNotNull(contentItems.embedding),
+      ),
+    )
+    .all()
+    .map((r) => bufferToEmbedding(r.embedding as Buffer));
 }
 
 export async function buildInterestVector(

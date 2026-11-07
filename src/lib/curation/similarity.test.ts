@@ -3,6 +3,7 @@ import {
   cosineSimilarity,
   weightedInterestVector,
   rankBySimilarity,
+  demoteLookalikes,
 } from "./similarity";
 
 describe("cosineSimilarity", () => {
@@ -54,6 +55,28 @@ describe("weightedInterestVector", () => {
     // Weighted mean (0.75, 0.25), normalized: (0.9487, 0.3162).
     expect(v[0]).toBeCloseTo(0.9487, 3);
     expect(v[1]).toBeCloseTo(0.3162, 3);
+  });
+});
+
+describe("demoteLookalikes", () => {
+  const item = (id: number, x: number, y: number) => ({
+    id,
+    embedding: new Float32Array([x, y]),
+  });
+
+  it("moves candidates very similar to a Less Like This item below the rest, keeping order", () => {
+    const disliked = [new Float32Array([1, 0])];
+    const out = demoteLookalikes(
+      [item(1, 1, 0.1), item(2, 0, 1), item(3, 0.9, 0.2), item(4, 0.3, 1)],
+      disliked,
+    );
+    // 1 and 3 are within ~0.98 of the disliked item; 4 is ~0.29 (below threshold).
+    expect(out.map((c) => c.id)).toEqual([2, 4, 1, 3]);
+  });
+
+  it("leaves ranking unchanged with no Less Like This items", () => {
+    const ordered = [item(1, 1, 0), item(2, 0, 1)];
+    expect(demoteLookalikes(ordered, []).map((c) => c.id)).toEqual([1, 2]);
   });
 });
 
