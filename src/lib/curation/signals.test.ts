@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { positiveSignalWeights, CLICK_WEIGHT } from "./signals";
+import {
+  positiveSignalWeights,
+  topicSignalWeight,
+  CLICK_WEIGHT,
+} from "./signals";
+
+describe("topicSignalWeight", () => {
+  it("splits one newest-Save's weight across the Topics at Cold Start", () => {
+    expect(topicSignalWeight(4, 0)).toBeCloseTo(0.25, 5);
+  });
+
+  it("fades Topics as Positive Signals accumulate, as if older than all of them", () => {
+    expect(topicSignalWeight(1, 1)).toBeCloseTo(0.9, 5);
+    expect(topicSignalWeight(2, 20)).toBeCloseTo(0.0608, 3); // 0.9^20 / 2
+  });
+});
 
 const click = (contentItemId: number) => ({ contentItemId, type: "click" });
 const save = (contentItemId: number) => ({ contentItemId, type: "save" });

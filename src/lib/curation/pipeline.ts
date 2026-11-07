@@ -27,7 +27,7 @@ import {
   rankBySimilarity,
   weightedInterestVector,
 } from "./similarity";
-import { positiveSignalWeights } from "./signals";
+import { positiveSignalWeights, topicSignalWeight } from "./signals";
 import { excludedFromCuration } from "./exclusion";
 import { rankWithLLM, type RankedItem } from "./ranker";
 
@@ -114,8 +114,14 @@ export async function runCurationPipeline(userId: number, category?: string) {
   const embedded = await generateMissingEmbeddings(category);
   console.log(`[curate] Embedded ${embedded} previously-unembedded items`);
 
-  // 2. Build user interest vector from positive interactions
-  const interestVector = await buildInterestVector(userId);
+  // 2. Build the Interest Profile from Topics and Positive Signals
+  const prefs = db
+    .select()
+    .from(userPreferences)
+    .where(eq(userPreferences.userId, userId))
+    .get();
+  const userTopics: string[] = prefs ? JSON.parse(prefs.topics) : [];
+  const interestVector = await buildInterestVector(userId, userTopics);
 
   // 3. Get recent content with embeddings, with older backfill when needed.
   const recentCutoffIso = new Date(
@@ -232,13 +238,6 @@ export async function runCurationPipeline(userId: number, category?: string) {
   );
 
   // 5. Stage 2 — Claude ranking
-  const prefs = db
-    .select()
-    .from(userPreferences)
-    .where(eq(userPreferences.userId, userId))
-    .get();
-
-  const userTopics: string[] = prefs ? JSON.parse(prefs.topics) : [];
   const digestSize: number = prefs?.digestSize ?? 20;
 
   const recentSaves = db
@@ -550,8 +549,11 @@ function dislikedEmbeddings(userId: number): Float32Array[] {
     .map((r) => bufferToEmbedding(r.embedding as Buffer));
 }
 
+// Topics seed the profile for curation; the Topic Score chart omits them so a
+// Topic isn't scored against itself.
 export async function buildInterestVector(
   userId: number,
+  topics: string[] = [],
 ): Promise<Float32Array> {
   // shortcut: reads all of the User's signal Interactions, fine at single-user
   // scale; add a limit if the Click history ever grows into the tens of thousands.
@@ -580,6 +582,10 @@ export async function buildInterestVector(
     embedding: bufferToEmbedding(embeddingById.get(id)!),
     weight,
   }));
+  const topicWeight = topicSignalWeight(topics.length, signals.length);
+  for (const topic of topics) {
+    signals.push({ embedding: await generateEmbedding(topic), weight: topicWeight });
+  }
 
   return weightedInterestVector(signals);
 }

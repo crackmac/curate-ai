@@ -31,6 +31,16 @@ export function positiveSignalWeights(
   return weights;
 }
 
+// Weight of each declared Topic in the Interest Profile. Topics together weigh
+// one newest Save and rank as older than every Positive Signal, so they carry
+// Cold Start alone and fade as real signals build up.
+export function topicSignalWeight(
+  topicCount: number,
+  positiveSignalCount: number,
+): number {
+  return DECAY ** positiveSignalCount / topicCount;
+}
+
 // Item ids of one Interaction type, newest first, each listed once.
 function distinct(interactions: SignalInteraction[], type: string): number[] {
   return [
