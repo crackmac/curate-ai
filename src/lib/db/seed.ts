@@ -763,7 +763,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/news",
     config: JSON.stringify({ feedUrl: "https://www.espn.com/espn/rss/news" }),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "Top US sports headlines",
     category: "sports",
@@ -884,7 +884,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/mlb/news",
     config: JSON.stringify({"feedUrl":"https://www.espn.com/espn/rss/mlb/news"}),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "ESPN MLB news, trades, and standings",
     category: "sports",
@@ -906,7 +906,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/nba/news",
     config: JSON.stringify({"feedUrl":"https://www.espn.com/espn/rss/nba/news"}),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "ESPN NBA news, trades, and game recaps",
     category: "sports",
@@ -917,7 +917,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/nfl/news",
     config: JSON.stringify({"feedUrl":"https://www.espn.com/espn/rss/nfl/news"}),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "ESPN NFL news, free agency, and game analysis",
     category: "sports",
@@ -939,7 +939,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/soccer/news",
     config: JSON.stringify({"feedUrl":"https://www.espn.com/espn/rss/soccer/news"}),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "ESPN global football/soccer coverage",
     category: "sports",
@@ -950,7 +950,7 @@ const defaultSources = [
     type: "rss",
     url: "https://www.espn.com/espn/rss/news",
     config: JSON.stringify({"feedUrl":"https://www.espn.com/espn/rss/news"}),
-    isDefault: 1,
+    isDefault: 0, // ESPN serves datacenter IPs an empty 202
     vetted: 1,
     description: "ESPN top headlines across all sports",
     category: "sports",
