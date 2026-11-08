@@ -81,33 +81,87 @@ Scoring guidelines:
 - Boost items that appeared in multiple sources — cross-source coverage signals importance`;
 }
 
-function parseResponse(
+/**
+ * Turns the LLM's reply into RankedItems that are safe to write to
+ * curated_items. Models don't always return exactly the JSON array asked
+ * for, so this tolerates prose or fences around the array, an array
+ * wrapped in an object, and a reply truncated mid-array (keeping the
+ * complete entries). Each entry must name a candidate's id and carry a
+ * numeric score: score and explanation are NOT NULL columns, so one entry
+ * without them used to abort the Curation Run after today's slice had
+ * already been cleared. Invalid entries are dropped (the candidate then
+ * scores 0); if nothing usable is left, falls back to similarity order.
+ */
+export function parseResponse(
   text: string,
   candidates: CandidateForRanking[],
 ): RankedItem[] {
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  const seen = new Set<number>();
+  const ranked: RankedItem[] = [];
+
+  for (const entry of extractJsonArray(text) ?? []) {
+    if (!entry || typeof entry !== "object") continue;
+    const { id: rawId, score: rawScore, explanation, reason } = entry as Record<string, unknown>;
+    const id = Number(rawId);
+    const score = Number(rawScore);
+    if (!candidateIds.has(id) || seen.has(id)) continue;
+    if (rawScore === null || rawScore === "" || !Number.isFinite(score)) continue;
+    seen.add(id);
+    ranked.push({
+      id,
+      score: Math.min(100, Math.max(0, score)),
+      explanation: typeof explanation === "string" ? explanation : "",
+      reason: VALID_REASONS.has(reason as ReasonTag) ? (reason as ReasonTag) : "topic_match",
+    });
+  }
+
+  if (ranked.length > 0) return ranked;
+
+  console.error(
+    "[ranker] No usable rankings in LLM response, falling back to trending.",
+    "\nRaw response (first 500 chars):",
+    text.slice(0, 500),
+  );
+  return candidates.map((c) => ({
+    id: c.id,
+    score: Math.round(c.similarityScore * 100),
+    explanation: `Trending on ${c.source}`,
+    reason: "trending" as ReasonTag,
+  }));
+}
+
+function extractJsonArray(text: string): unknown[] | null {
   const cleaned = text
     .replace(/```json?\n?/g, "")
     .replace(/```/g, "")
     .trim();
+  const start = cleaned.indexOf("[");
+  const attempts = [
+    cleaned,
+    // Prose before/after the array.
+    start >= 0 ? cleaned.slice(start, cleaned.lastIndexOf("]") + 1) : "",
+    // Cut off mid-array (e.g. at the token limit): keep the complete entries.
+    start >= 0 ? `${cleaned.slice(start, cleaned.lastIndexOf("}") + 1)}]` : "",
+  ];
+  for (const attempt of attempts) {
+    const parsed = tryParseJson(attempt);
+    if (Array.isArray(parsed)) return parsed;
+    // e.g. {"rankings": [...]}
+    if (parsed && typeof parsed === "object") {
+      const inner = Object.values(parsed).find(Array.isArray);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
+
+function tryParseJson(text: string): unknown {
+  if (!text) return undefined;
   try {
-    const parsed = JSON.parse(cleaned) as RankedItem[];
-    return parsed.map((item) => ({
-      ...item,
-      reason: VALID_REASONS.has(item.reason) ? item.reason : "topic_match",
-    }));
-  } catch (err) {
-    console.error(
-      "[ranker] Failed to parse LLM response as JSON, falling back to trending:",
-      err,
-      "\nRaw response (first 500 chars):",
-      text.slice(0, 500),
-    );
-    return candidates.map((c) => ({
-      id: c.id,
-      score: Math.round(c.similarityScore * 100),
-      explanation: `Trending on ${c.source}`,
-      reason: "trending" as ReasonTag,
-    }));
+    return JSON.parse(text);
+  } catch {
+    return undefined;
   }
 }
 
