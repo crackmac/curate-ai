@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sources, contentItems, userSources } from "@/lib/db/schema";
 import { getAdapter } from "@/lib/sources";
+import { fetchSubreddits } from "@/lib/sources/reddit";
+import type { RawContentItem } from "@/lib/sources/types";
 import { eq } from "drizzle-orm";
 
 const USER_ID = 1;
@@ -9,8 +11,9 @@ const USER_ID = 1;
 // Minimum gap (ms) between consecutive fetches of the same source type, to
 // stay under per-service rate limits. The ingest loop is already serial, so
 // this only paces same-type calls; alternating types incur no extra wait.
+// Reddit isn't listed: a Category's subreddits share one combined request,
+// paced by Reddit's own rate-limit headers (see fetchSubreddits).
 const THROTTLE_MS: Record<string, number> = {
-  reddit: 5000, // Reddit's .rss burst-limits; ~5s keeps us under ~12 req/min
   youtube: 1500,
   bluesky: 500,
   rss: 0,
@@ -41,11 +44,33 @@ export async function POST(request: Request) {
     const empty: string[] = [];
     const lastFetchByType: Record<string, number> = {};
 
-    for (const source of allSources) {
+    const enabledSources = allSources.filter((source) => {
       const override = overrideMap.get(source.id);
-      const enabled = override ? override.enabled === 1 : source.isDefault === 1;
-      if (!enabled) continue;
+      return override ? override.enabled === 1 : source.isDefault === 1;
+    });
 
+    // Reddit allows about one unauthenticated request a minute, so each
+    // Category's enabled subreddit Sources are fetched together in one
+    // request, made when the Category's first subreddit Source comes up.
+    const subredditsByCategory = new Map<string, string[]>();
+    for (const source of enabledSources) {
+      if (source.type !== "reddit") continue;
+      const subreddit = subredditOf(source.config);
+      if (!subreddit) continue;
+      const key = source.category ?? "";
+      subredditsByCategory.set(key, [...(subredditsByCategory.get(key) ?? []), subreddit]);
+    }
+    const redditFetches = new Map<string, Promise<Map<string, RawContentItem[]>>>();
+    const fetchReddit = (category: string) => {
+      let pending = redditFetches.get(category);
+      if (!pending) {
+        pending = fetchSubreddits(subredditsByCategory.get(category) ?? []);
+        redditFetches.set(category, pending);
+      }
+      return pending;
+    };
+
+    for (const source of enabledSources) {
       const adapter = getAdapter(source.type);
       if (!adapter) {
         skipped.push(`${source.slug}: no adapter for type "${source.type}"`);
@@ -62,7 +87,10 @@ export async function POST(request: Request) {
 
       try {
         const config = JSON.parse(source.config);
-        const items = await adapter.fetch(config);
+        const subreddit = source.type === "reddit" ? subredditOf(source.config) : undefined;
+        const items = subreddit
+          ? ((await fetchReddit(source.category ?? "")).get(subreddit) ?? [])
+          : await adapter.fetch(config);
 
         if (items.length === 0) empty.push(source.slug);
 
@@ -95,5 +123,14 @@ export async function POST(request: Request) {
       { error: err instanceof Error ? err.message : "unknown error" },
       { status: 500 }
     );
+  }
+}
+
+function subredditOf(config: string): string | undefined {
+  try {
+    const subreddit = (JSON.parse(config) as { subreddit?: unknown }).subreddit;
+    return typeof subreddit === "string" && subreddit ? subreddit : undefined;
+  } catch {
+    return undefined;
   }
 }
